@@ -6,9 +6,10 @@ import time
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from dataset import *
-from model import *
-from trainer import *
+import trainer
+import warnings
+
+warnings.filterwarning('ignore')
 
 def train(path_h5):
     EPOCH = 50
@@ -68,6 +69,7 @@ def make_dir(info):
         os.mkdir(save_dir / info['name'] / time_string)
         os.mkdir(save_dir / info['name'] / time_string / 'log')
         os.mkdir(save_dir / info['name'] / time_string / 'model')
+    return save_dir / info['name'] / time_string
 
     
 
@@ -75,9 +77,9 @@ def main(args):
     config, resume = args.config, args.resume
     with open(config) as f:
         info = json.load(f)
-    make_dir(info)
-    trainer = BaseTrainer(info, resume)
-    trainer.train()
+    path = make_dir(info)
+    tr = getattr(trainer, info['trainer'])(info, resume, path)
+    tr.train()
     train('/home/yl/CodeAndData/data/stft_data_2021_12_3_20_17_224_224.h5')
 
 
