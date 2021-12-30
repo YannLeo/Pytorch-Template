@@ -1,2 +1,2 @@
 # Pytorch-Template
-The template of pytorch trainning and testing
+The template of pytorch training and testing
