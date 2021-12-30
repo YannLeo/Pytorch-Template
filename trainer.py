@@ -14,8 +14,8 @@ class BaseTrainer():
         self.max_epoch = info['epoch']
         self.dataset_train = self.get_object(dataset, info['dataloader_train']['dataset']['type'], info['dataloader_train']['dataset']['args'])
         self.dataset_test = self.get_object(dataset, info['dataloader_test']['dataset']['type'], info['dataloader_test']['dataset']['args'])
-        self.dataloader_train = torch.utils.data.Dataloader(dataset=self.dataset_train, **info['dataloader_train']['args'])
-        self.dataloader_test = torch.utils.data.Dataloader(dataset=self.dataset_train, **info['dataloader_train']['args'])
+        self.dataloader_train = torch.utils.data.DataLoader(dataset=self.dataset_train, **info['dataloader_train']['args'])
+        self.dataloader_test = torch.utils.data.DataLoader(dataset=self.dataset_test, **info['dataloader_test']['args'])
         self.critern = self.get_object(torch.nn, info['critern'], dict())
         self.model = self.get_object(model, info['model']['type'], info['model']['args'])
         self.model = self.model.to(self.device)
@@ -24,6 +24,7 @@ class BaseTrainer():
         self.log_path = path / 'log' / 'log.txt'
         self.model_path = path / 'model'
         self.save_period = info['save_period']
+        self.min_valid_loss = inf
         if self.resume:
             checkpoint = torch.load(self.resume)
             state_dict = checkpoint['state_dict']
@@ -41,7 +42,6 @@ class BaseTrainer():
     
     def train(self):
         start_epoch = self.epoch
-        self.min_valid_loss = inf
         self.num_train = len(self.dataset_train)
         self.num_test = len(self.dataset_test)
         self.num_train_batch = self.num_train // self.dataloader_train.batch_size
@@ -50,13 +50,13 @@ class BaseTrainer():
         self.test_display = 1 if self.num_test_batch < 10 else self.num_test_batch // 10
         for epoch in range(start_epoch, self.max_epoch):
             time_begin = time.time()
-            print('epoch: {} \t| '.format(epoch + 1), end='')
+            print('epoch: {}\t| '.format(epoch + 1), end='')
             train_loss, train_acc = self.train_epoch(epoch + 1)
             print('train_loss: {:.6f} | train_acc: {:.6f} | '.format(train_loss, train_acc), end='')
-            print('\rtesting...', flush=True)
+            print('testing...' + '\b' * len('testing...'), end='', flush=True)
             valid_loss, valid_acc = self.valid_epoch(epoch + 1)
             time_end = time.time()
-            print('valid_loss: {:.6f} | valid_acc: {:.6f} | time: {:d}'.format(valid_loss, valid_acc, int(time_end-time_begin)), end='')
+            print('valid_loss: {:.6f} | valid_acc: {:.6f} | time: {:d}s'.format(valid_loss, valid_acc, int(time_end-time_begin)), end='')
             best = self.save_model_by_valid_loss(epoch + 1, valid_loss)
             self.lr_scheduler.step()
             self.logger.info('epoch: {} \t| train_loss: {:.6f} | train_acc: {:.6f} | valid_loss: {:.6f} | valid_acc: {:.6f}'.format(
@@ -79,7 +79,8 @@ class BaseTrainer():
             train_loss += loss.item()
             train_acc_num += torch.sum(torch.argmax(out, dim=1) == target).item()
             if batch % self.train_display == 0:
-                print('\rtraining... batch: {} Loss: {:.6f}'.format(batch, loss.item()), end='', flush=True)
+                print('training... batch: {}/{} Loss: {:.6f}'.format(batch, self.num_train_batch, loss.item()) + 
+                      '\b' * len('training... batch: {}/{} Loss: {:.6f}'.format(batch, self.num_train_batch, loss.item())), end='', flush=True)
         return train_loss / self.num_train_batch, train_acc_num / self.num_train
         
 
@@ -87,11 +88,11 @@ class BaseTrainer():
     def valid_epoch(self, epoch):
         test_loss = 0
         test_acc_num = 0
-        model.eval()
+        self.model.eval()
         with torch.no_grad():
             for batch, (data, target) in enumerate(self.dataloader_test):
                 data, target = data.to(self.device), target.to(self.device)
-                out = model(data)
+                out = self.model(data)
                 loss = self.critern(out, target)
                 test_loss += loss.item()
                 test_acc_num += torch.sum(torch.argmax(out, dim=1) == target).item()  
@@ -99,7 +100,9 @@ class BaseTrainer():
         
 
     def save_model_by_valid_loss(self, epoch, test_loss):
+        flag = 0
         if test_loss < self.min_valid_loss:
+            flag = 1
             if epoch % self.save_period == 0:
                 print(' | saving best model and checkpoint...')
                 self.save_checkpoint(epoch, True)
@@ -114,6 +117,7 @@ class BaseTrainer():
             else:
                 print()
         self.min_valid_loss = min(test_loss, self.min_valid_loss)
+        return flag
 
 
     def save_checkpoint(self, epoch, save_best=False):
@@ -150,17 +154,12 @@ class BaseTrainer():
         self.logger.info("Loading checkpoint: {} ...".format(resume_path))
         checkpoint = torch.load(resume_path)
         self.start_epoch = checkpoint['epoch'] + 1
-        self.mnt_best = checkpoint['monitor_best']
+        self.min_valid_loss = checkpoint['loss_best']
 
         # load architecture params from checkpoint.
         self.model.load_state_dict(checkpoint['state_dict'])
 
-        # load optimizer state from checkpoint only when optimizer type is not changed.
-        if checkpoint['config']['optimizer']['type'] != self.config['optimizer']['type']:
-            self.logger.warning("Warning: Optimizer type given in config file is different from that of checkpoint. "
-                                "Optimizer parameters not being resumed.")
-        else:
-            self.optimizer.load_state_dict(checkpoint['optimizer'])
+        self.optimizer.load_state_dict(checkpoint['optimizer'])
 
         self.logger.info("Checkpoint loaded. Resume training from epoch {}".format(self.start_epoch))
 
