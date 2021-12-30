@@ -8,6 +8,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import trainer
 import warnings
+import shutil
 
 warnings.filterwarning('ignore')
 
@@ -57,7 +58,7 @@ def train(path_h5):
         print('test_loss: {:.6f} | test_acc: {:.6f}'.format(test_loss / num_test_batch, test_acc_num / num_test))
         lr_scheduler.step()
 
-def make_dir(info):
+def make_dir(info, config):
     save_dir = Path('saved')
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
@@ -69,6 +70,7 @@ def make_dir(info):
         os.mkdir(save_dir / info['name'] / time_string)
         os.mkdir(save_dir / info['name'] / time_string / 'log')
         os.mkdir(save_dir / info['name'] / time_string / 'model')
+    shutil.copy(config, save_dir / info['name'] / time_string / 'log')
     return save_dir / info['name'] / time_string
 
     
@@ -77,10 +79,10 @@ def main(args):
     config, resume = args.config, args.resume
     with open(config) as f:
         info = json.load(f)
-    path = make_dir(info)
+    path = make_dir(info, config)
     tr = getattr(trainer, info['trainer'])(info, resume, path)
     tr.train()
-    train('/home/yl/CodeAndData/data/stft_data_2021_12_3_20_17_224_224.h5')
+    # train('/home/yl/CodeAndData/data/stft_data_2021_12_3_20_17_224_224.h5')
 
 
 if __name__ == '__main__':
