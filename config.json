@@ -1,0 +1,54 @@
+{
+    "name": "template",
+    "model": {
+        "type": "ResNet50",
+        "args": {
+            "num_class": 8
+        }
+    },
+    "trainer": "BaseTrainer",
+    "dataloader_train": {
+        "dataset": {
+            "type": "H5Dataset",
+            "args": {
+                "path": "/home/yl/CodeAndData/data/stft_data_2021_12_3_20_17_224_224.h5",
+                "train": true
+            }
+        },
+        "args": {
+            "batch_size": 32,
+            "shuffle": true,
+            "num_workers": 1
+        }
+    },
+    "dataloader_test": {
+        "dataset": {
+            "type": "H5Dataset",
+            "args": {
+                "path": "/home/yl/CodeAndData/data/stft_data_2021_12_3_20_17_224_224.h5",
+                "train": false
+            }
+        },
+        "args": {
+            "batch_size": 32,
+            "shuffle": false,
+            "num_workers": 1
+        }
+    },
+    "epoch": 100,
+    "critern": "CrossEntropyLoss",
+    "optimizer": {
+        "type": "Adam",
+        "args": {
+            "lr": 0.0003
+        }
+    },
+    "lr_scheduler": {
+        "type": "StepLR",
+        "args": {
+            "step_size": 30,
+            "gamma": 0.5
+        }
+    },
+    "save_period": 2
+}
