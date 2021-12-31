@@ -61,7 +61,7 @@ class BaseTrainer():
             self.lr_scheduler.step()
             self.logger.info('epoch: {} \t| train_loss: {:.6f} | train_acc: {:.6f} | valid_loss: {:.6f} | valid_acc: {:.6f}'.format(
                                 epoch+1, train_loss, train_acc, valid_loss, valid_acc) 
-                                + ' | saving best model...' if best else '')
+                                + (' | saving best model...' if best else ''))
             self.epoch += 1
             
 
