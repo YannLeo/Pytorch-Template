@@ -50,5 +50,6 @@
             "gamma": 0.5
         }
     },
-    "save_period": 2
+    "save_period": 2,
+    "device": 0
 }
