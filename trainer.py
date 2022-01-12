@@ -44,8 +44,8 @@ class BaseTrainer():
         start_epoch = self.epoch
         self.num_train = len(self.dataset_train)
         self.num_test = len(self.dataset_test)
-        self.num_train_batch = self.num_train // self.dataloader_train.batch_size
-        self.num_test_batch = self.num_test // self.dataloader_test.batch_size
+        self.num_train_batch = self.num_train // self.dataloader_train.batch_size + 1
+        self.num_test_batch = self.num_test // self.dataloader_test.batch_size + 1
         self.train_display = 1 if self.num_train_batch < 10 else self.num_train_batch // 10
         self.test_display = 1 if self.num_test_batch < 10 else self.num_test_batch // 10
         for epoch in range(start_epoch, self.max_epoch):
