@@ -1,0 +1,45 @@
+# A config file for DNN tests on MNIST dataset
+#
+# @Time    : 2022/12/26 14:23
+# @Author  : 
+# @Notes   : Baseline tests. 
+# 
+
+name = 'mnist_dnn'       # where to save the results under ./saved/
+trainer = 'BasicTrainer' # the trainer name; main procedure
+
+############################### Important hyper parameters!!
+label_smoothing = 0.0
+
+
+############################### Miscellaneous
+epochs = 20
+save_period = 9
+# Whether to plot the confusion matrices in each test epoch to ./saved/**/confusion/*.jpg.
+confusion = false
+
+############################### Neural Networks
+# The base model
+[model]
+name = 'MNISTResNet_MINE'
+args = { num_classes = 10 }
+
+############################### Dataloaders
+# On source domian
+[dataloader_source]
+args = { batch_size = 128, num_workers = 1, shuffle = true, drop_last = true }
+[dataloader_source.dataset]
+name = "MNISTDataset"
+args = { train = true }
+
+[dataloader_valid]
+args = { batch_size = 128, num_workers = 1, shuffle = false, drop_last = true }
+[dataloader_valid.dataset]
+name = "MNISTDataset"
+args = { train = false }
+
+############################### Learning Rate Schedulers for Optimizers
+[lr_scheduler]
+name = "StepLR"
+init_lr = 0.0006
+args = { step_size = 60, gamma = 0.5 }

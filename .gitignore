@@ -1,0 +1,6 @@
+!.gitignore
+.vscode
+.idea
+**/__pycache__/
+dummy/
+saved/
