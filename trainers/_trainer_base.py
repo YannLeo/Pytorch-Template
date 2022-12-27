@@ -12,17 +12,28 @@ import numpy as np
 from pathlib import Path
 from sklearn.metrics import confusion_matrix
 from matplotlib import pyplot as plt
+from torch.utils import tensorboard
 import time
 
+
+# Used to print the log in different colors: r, g, b, w, c, m, y, k
 _color_map = {
-    "black": ("\033[30m", "\033[0m"),  # 黑色字
-    "red": ("\033[31m", "\033[0m"),  # 红色字
-    "green": ("\033[32m", "\033[0m"),  # 绿色字
-    "yellow": ("\033[33m", "\033[0m"),  # 黄色字
-    "blue": ("\033[34m", "\033[0m"),  # 蓝色字
-    "magenta": ("\033[35m", "\033[0m"),  # 紫色字
-    "cyan": ("\033[36m", "\033[0m"),  # 青色字
-    "white": ("\033[37m", "\033[0m"),  # 白色字
+    "black":      ("\033[30m", "\033[0m"),  # 黑色字
+    "k":          ("\033[30m", "\033[0m"),  # 黑色字
+    "red":        ("\033[31m", "\033[0m"),  # 红色字
+    "r":          ("\033[31m", "\033[0m"),  # 红色字
+    "green":      ("\033[32m", "\033[0m"),  # 绿色字
+    "g":          ("\033[32m", "\033[0m"),  # 绿色字
+    "yellow":     ("\033[33m", "\033[0m"),  # 黄色字
+    "y":          ("\033[33m", "\033[0m"),  # 黄色字
+    "blue":       ("\033[34m", "\033[0m"),  # 蓝色字
+    "b":          ("\033[34m", "\033[0m"),  # 蓝色字
+    "magenta":    ("\033[35m", "\033[0m"),  # 紫色字
+    "m":          ("\033[35m", "\033[0m"),  # 紫色字
+    "cyan":       ("\033[36m", "\033[0m"),  # 青色字
+    "c":          ("\033[36m", "\033[0m"),  # 青色字
+    "white":      ("\033[37m", "\033[0m"),  # 白色字
+    "w":          ("\033[37m", "\033[0m"),  # 白色字
     "white_on_k": ("\033[40;37m", "\033[0m"),  # 黑底白字
     "white_on_r": ("\033[41;37m", "\033[0m"),  # 红底白字
     "white_on_g": ("\033[42;37m", "\033[0m"),  # 绿底白字
@@ -54,13 +65,17 @@ class _Trainer_Base(ABC):
         self.resume = resume  # path to checkpoint
         self.device = device
         self.max_epoch = info['epochs']
-        self.num_classes = info['model']['args']['num_classes']
+        self.num_classes = info['num_classes']
         self.log_path = path / 'log' / 'log.txt'
         self.model_path = path / 'model'
         self.confusion_path = path / 'confusion'
         self.save_period = info['save_period']
         self.min_valid_loss = np.inf
         self.min_valid_pretrain_loss = np.inf
+        self.plot_confusion = self.info.get('plot_confusion', False)
+
+        self.model = None  # must be defined in `self.__prepare_models()`
+        self._y_true, self._y_pred = None, None  # temp variables for confusion matrix
 
         # 1. Dataloaders
         self.__prepare_dataloaders(info)
@@ -70,6 +85,7 @@ class _Trainer_Base(ABC):
         self.__prepare_opt(info)
         # loggers
         self.__get_logger()  # txt logger
+        self.metrics_writer = tensorboard.SummaryWriter(path / 'log') 
 
     @abstractmethod
     def __prepare_dataloaders(self, info):
@@ -99,50 +115,60 @@ class _Trainer_Base(ABC):
 
     @staticmethod
     def metrics_wrapper(metrics: dict, with_color=False) -> str:
-        if not with_color:
-            return "".join(f"{key}: {value:.4f} | " for key, value in metrics.items())
-        else:
+        return (
+            "".join(
+                f"{_color_map[value[1]][0]}{key}: {value[0]:.4f}{_color_map[value[1]][1]} | "
+                if isinstance(value, (tuple, list))
+                else f"{key}: {value:.4f} | "
+                for key, value in metrics.items()
+            )
+            if with_color
+            else "".join(
+                f"{key}: {value[0] if isinstance(value, (tuple, list)) else value:.4f} | "
+                for key, value in metrics.items()
+            )
+        )
 
     def train(self):  # sourcery skip: low-code-quality
         """
         Call train_epoch() and test_epoch() for each epoch and log the results.
         """
-        begin_epoch = self.epoch
-
-        for epoch in range(begin_epoch, self.max_epoch):
+        for epoch in range(self.epoch, self.max_epoch):
             time_begin = time.time()
-            print(f'epoch: {epoch + 1}\t| ', end='')
+            print(f'epoch: {epoch}\t| ', end='')
 
-            '''Training epoch'''
+            '''1. Training epoch'''
             metrics_train = self.train_epoch(epoch+1)
-            print(f'train_loss: {train_class_loss:.6f} | train_kl_loss: {train_kl_loss:.6f} | train_acc: {train_acc:6f} | ', end='')
+            print(self.metrics_wrapper(metrics_train, with_color=True), end='')
             print('testing...' + '\b' * len('testing...'), end='', flush=True)
 
             '''Testing epoch'''
             metrics_test = self.test_epoch(epoch+1)
             time_end = time.time()
-            print(
-                f'test_class_loss: {test_class_loss:6f} | test_acc: {test_acc:6f} | pseudo_rate: {num_pseudo/self.num_target:.6f} | '
-                f'pseudo_correct: {num_correct/(num_pseudo+1e-5):.6f} | time: {int(time_end - time_begin)}s', end='')
+            print(f'{self.metrics_wrapper(metrics_test, with_color=True)}time: {int(time_end - time_begin)}s', end='')
 
             '''Logging results'''
-            best = self.__save_model_by_valid_loss(epoch + 1, test_class_loss)
-            self.metric_writer.add_scalar("test_acc", test_acc, epoch)
-            self.logger.info(
-                f'epoch: {epoch + 1}\t| train_class_loss: {train_class_loss:.6f} | train_kl_loss: {train_kl_loss:.6f} | '
-                f'train_acc: {train_acc:.6f} | pseudo_rate: {num_pseudo/self.num_target:.6f} | '
-                f'pseudo_correct: {num_correct/(num_pseudo+1e-5):.6f} | test_class_loss: {test_class_loss:.6f} | '
-                f'test_acc: {test_acc:.6f}{" | saving best model..." if best else ""}')
+            best = self.__save_model_by_test_loss(epoch, metrics_test["test_loss"])  # need to be specified by yourself
+            self.metrics_writer.add_scalar("test_acc", metrics_test["test_acc"], epoch)  # need to be specified by yourself
+            # log to log.txt
+            self.logger.info(f'epoch: {epoch}\t| '
+                             f'{self.metrics_wrapper(metrics_train)}{self.metrics_wrapper(metrics_test)}'
+                             f'{"saving best model..." if best else ""}')
+            self.__epoch_end(epoch)  # Can be called at the end of each epoch
             self.epoch += 1
 
-            if self.info.get('confusion', False):
-                self.__plot_confusion_matrix(photo_path=self.confusion_path / f'train-{str(epoch + 1).zfill(len(str(self.max_epoch)))}.png',
-                                             labels=train_labels, predicts=train_predicts, classes=list(range(self.num_classes)), normalize=True)
+        self.__train_end()  # Must be called at the end of the training
 
-        self.__train_end()
-
+    def __epoch_end(self, epoch):
+        """If this function is overrided, please call super().__epoch_end() at the end of the function."""
+        if self.plot_confusion and self._y_pred and self._y_true:
+            self.__plot_confusion_matrix(
+                photo_path=self.confusion_path / f'test-{str(epoch).zfill(len(str(self.max_epoch)))}.png',
+                labels=self._y_true, predicts=self._y_pred, classes=list(range(self.num_classes)))
+    
     def __train_end(self):
-        pass
+        """If this function is overrided, please call super().__epoch_end() at the end of the function."""
+        self.metrics_writer.close()
 
     @abstractmethod
     def train_epoch(self, epoch):
@@ -152,8 +178,10 @@ class _Trainer_Base(ABC):
     def test_epoch(self, epoch):
         pass
 
-    def __plot_confusion_matrix(self, photo_path, labels, predicts, classes, normalize=False, title='Confusion matrix', cmap=plt.cm.Oranges):
-        FONT_SIZE = 9
+    @staticmethod
+    def __plot_confusion_matrix(photo_path, labels, predicts, classes, normalize=True, title='Confusion Matrix',
+                                cmap=plt.cm.Oranges):
+        FONT_SIZE = 10
         cm = confusion_matrix(labels, predicts, labels=list(range(len(classes))))
         if normalize:
             cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
@@ -162,21 +190,22 @@ class _Trainer_Base(ABC):
         plt.imshow(cm, interpolation='nearest', cmap=cmap)
         plt.title(title)
         plt.colorbar()
-        tick_marks = np.arange(len(classes))
-        plt.xticks(tick_marks, classes, rotation=45, fontsize=FONT_SIZE)
-        plt.yticks(tick_marks, classes, fontsize=FONT_SIZE)
+        plt.xticks(np.arange(len(classes)), classes, rotation=45, fontsize=FONT_SIZE)
+        plt.yticks(np.arange(len(classes)), classes, fontsize=FONT_SIZE)
         plt.ylim(len(classes) - 0.5, -0.5)
         fmt = '.2f' if normalize else 'd'
         thresh = cm.max() / 2.
         for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
             plt.text(j, i, format(cm[i, j], fmt),
                      horizontalalignment="center",
-                     fontsize=FONT_SIZE+3,
+                     fontsize=FONT_SIZE+4,
                      color="white" if cm[i, j] > thresh else "black")
         plt.tight_layout()
-        plt.ylabel('True label')
-        plt.xlabel('Predicted label')
-        plt.savefig(photo_path)
+        plt.ylabel('True labels')
+        plt.xlabel('Predicted labels')
+        plt.savefig(photo_path,
+                    # format="eps", bbox_inches='tight', pad_inches=0, dpi=300,
+                    )
 
     @staticmethod
     def __get_object(module, s: str, parameter: dict):
@@ -192,7 +221,7 @@ class _Trainer_Base(ABC):
         self.logger.addHandler(handler)
         self.logger.info(f'model: {type(self.model).__name__}')  # Only log name of variable `self.model`
 
-    def __save_model_by_valid_loss(self, epoch, valid_loss):
+    def __save_model_by_test_loss(self, epoch, valid_loss):
         flag = 0
         if valid_loss < self.min_valid_loss:
             flag = 1
@@ -216,7 +245,7 @@ class _Trainer_Base(ABC):
         state = {
             'arch': arch,
             'epoch': epoch,
-            'state_dict': self.model.state_dict(),
+            'state_dict': self.model.state_dict(),  # Only save parameters of variable `self.model`
             'loss_best': self.min_valid_pretrain_loss,
         }
         if save_best:

@@ -2,12 +2,6 @@ from torchvision import datasets, transforms
 import torch
 
 
-class MNIST(datasets.MNIST):
-    def __getitem__(self, index):
-        # data, target, index
-        return *super().__getitem__(index), torch.tensor(index)
-
-
 def MNISTDataset(path='/home/rxy/Datasets', size=28, channels=3, train=True):
     transform = transforms.Compose([
         transforms.Resize(size),
@@ -16,8 +10,8 @@ def MNISTDataset(path='/home/rxy/Datasets', size=28, channels=3, train=True):
         transforms.Lambda(lambda x: x.repeat(channels, 1, 1)),
     ])
 
-    return MNIST(path, train=True, download=False, transform=transform) if train else \
-        MNIST(path, train=False, download=False, transform=transform)
+    return datasets.MNIST(path, train=True, download=False, transform=transform) if train else \
+        datasets.MNIST(path, train=False, download=False, transform=transform)
 
 
 if __name__ == '__main__':

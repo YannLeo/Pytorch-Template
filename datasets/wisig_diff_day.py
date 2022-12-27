@@ -22,7 +22,7 @@ class WiSigDiffDayDataset(Dataset):
     def __getitem__(self, index):
         data = self.data[index]
         target = self.targets[index]
-        return data, target, torch.tensor(index)
+        return data, target 
 
     def __len__(self):
         return len(self.targets)

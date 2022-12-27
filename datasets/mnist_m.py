@@ -25,7 +25,7 @@ class MNIST_MDataset(Dataset):
         print("Successfully loaded MNIST_M data ->", self.data.shape, self.targets.shape)
 
     def __getitem__(self, index):
-        return self.transform(self.data[index]).float(), self.targets[index], torch.tensor(index)
+        return self.transform(self.data[index]).float(), self.targets[index]
 
     def __len__(self):
         return len(self.targets)

@@ -4,16 +4,11 @@
 # @File       : basic_trainer.py
 # @Note       : A basic trainer for training a feed forward neural network
 
-import time
-import itertools
-import logging
+
 import torch
 from torch import nn
 import numpy as np
 from pathlib import Path
-from sklearn.metrics import confusion_matrix
-import matplotlib.pyplot as plt
-from torch.utils import tensorboard
 from _trainer_base import _Trainer_Base
 import models
 import datasets
@@ -22,9 +17,7 @@ import datasets
 class BasicTrainer(_Trainer_Base):
     def __init__(self, info: dict, resume=None, path=Path(), device=torch.device('cuda')):
         super().__init__(info, resume, path, device)
-        # Tensorboard logger
-        self.metric_writer = tensorboard.SummaryWriter(path / 'log')  
-
+        
     def __prepare_dataloaders(self, info):
         # datasets!
         self.dataset_train = self.__get_object(datasets, info['dataloader_train']['dataset']['name'],
@@ -47,6 +40,7 @@ class BasicTrainer(_Trainer_Base):
         self.test_display_interval = 1 if self.num_test_batch < 10 else self.num_test_batch // 10
         
     def __prepare_models(self, info):
+        # the name `self.model` is reserved for some functions in the base class
         self.model = self.__get_object(models, info['model']['name'], info['model']['args'])
         self.__resuming_model(self.model)  # Prepare for resuming models
         self.model = self.model.to(self.device)
@@ -59,25 +53,21 @@ class BasicTrainer(_Trainer_Base):
     def __reset_grad(self):
         self.opt.zero_grad(set_to_none=True)
 
-    def __train_end(self):
-        self.metric_writer.close()
-
+    '''
+    def train(self):  # You may need to override this function to customize your training process
+        pass
+    '''
+    
     def train_epoch(self, epoch):  # sourcery skip: low-code-quality
         """
-        Main training process
+        The main training process
         """
-        train_loss, train_kl_loss = 0, 0
+        train_loss = 0 
         train_acc_num = 0
         train_num = 0
-        predict, labels = [], []
-        pseudo_labels = torch.ones(len(self.dataset_target)).long() * (-1)
-        predicted_labels = torch.ones(len(self.dataset_target)).long() * (-1)
 
         self.model.train()
-        self.mine.train()
         for batch, data_pack in enumerate(zip(self.dataloader_source, self.dataloader_target)):
-            # `index_t` records the index of target data in the whole dataset, for pseudo labeling.
-            # We do not use label_t here.
             (data_s, label_s, _), (data_t, _, index_t) = data_pack
             data_s, data_t, label_s = data_s.to(self.device), data_t.to(self.device), label_s.to(self.device)
 
@@ -127,7 +117,7 @@ class BasicTrainer(_Trainer_Base):
             loss.backward()
             self.opt.step()
             # logging the learning rate
-            self.metric_writer.add_scalar("lr", self.opt.param_groups[0]["lr"], epoch*self.num_train_batch+batch)
+            self.metrics_writer.add_scalar("lr", self.opt.param_groups[0]["lr"], epoch*self.num_train_batch+batch)
 
             predict.append(torch.argmax(output_s, dim=1).cpu().detach().numpy())
             labels.append(label_s.cpu().detach().numpy())
@@ -142,12 +132,10 @@ class BasicTrainer(_Trainer_Base):
                 print('training... batch: {}/{} | total_loss: {:6f} | kl_loss: {:6f}'.format(batch, self.num_train_batch, loss.item(), kl_loss.item()) +
                       '\b' * len('training... batch: {}/{} | total_loss: {:6f} | kl_loss: {:6f}'.format(batch, self.num_train_batch, loss.item(), kl_loss.item())), end='', flush=True)
 
-        predict = np.concatenate(predict, axis=0)
-        labels = np.concatenate(labels, axis=0)
-        return train_loss / self.num_train_batch, train_kl_loss / self.num_train_batch, train_acc_num / train_num, \
-            predict, labels, pseudo_labels, predicted_labels
+        return train_loss / self.num_train_batch, train_kl_loss / self.num_train_batch, train_acc_num / train_num,
 
     def test_epoch(self, epoch):
+        self._y_pred, self._y_true = [], []  # If self.plot_confusion ... TODO
         # on target domain
         test_class_loss = 0
         test_acc_num = 0
