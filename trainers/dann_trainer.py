@@ -42,7 +42,6 @@ class DANNTrainer:
     """
 
     def __init__(self, info: dict, resume=None, path=Path(), device=torch.device('cuda')):
-        super().__init__()
         # Basic variables
         self.info = info  # dict of configs from toml file
         self.resume = resume  # path to checkpoint

@@ -26,15 +26,15 @@ args = { num_classes = 10 }
 
 ############################### Dataloaders
 # On source domian
-[dataloader_source]
+[dataloader_train]
 args = { batch_size = 128, num_workers = 1, shuffle = true, drop_last = true }
-[dataloader_source.dataset]
+[dataloader_train.dataset]
 name = "MNISTDataset"
 args = { train = true }
 
-[dataloader_valid]
+[dataloader_test]
 args = { batch_size = 128, num_workers = 1, shuffle = false, drop_last = true }
-[dataloader_valid.dataset]
+[dataloader_test.dataset]
 name = "MNISTDataset"
 args = { train = false }
 

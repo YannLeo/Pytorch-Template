@@ -21,7 +21,7 @@ warnings.filterwarnings('ignore')
 
 """1. Reading configs from console"""
 parser = argparse.ArgumentParser('Pytorch Template')
-parser.add_argument('-c', '--config', default='configs/147319.toml',  # default
+parser.add_argument('-c', '--config', default='configs/mnist.toml',  # default
                     type=str, help='config file path (default: None)')
 parser.add_argument('-r', '--resume', default=None, type=str,
                     help='path to latest checkpoint (default: None)')
