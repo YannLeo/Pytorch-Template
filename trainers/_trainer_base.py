@@ -68,7 +68,7 @@ class _Trainer_Base(ABC):
         self.num_classes = info['num_classes']
         self.log_path = path / 'log' / 'log.txt'
         self.model_path = path / 'model'
-        self.confusion_path = path / 'confusion'
+        self.confusion_path = path / 'confusion_matrix'
         self.save_period = info['save_period']
         self.min_valid_loss = np.inf
         self.min_valid_pretrain_loss = np.inf
@@ -78,24 +78,24 @@ class _Trainer_Base(ABC):
         self._y_true, self._y_pred = None, None  # temp variables for confusion matrix
 
         # 1. Dataloaders
-        self.__prepare_dataloaders(info)
+        self._prepare_dataloaders(info)
         # 2. Defination and initialization of the models
-        self.__prepare_models(info)
+        self._prepare_models(info)
         # 3. Optimizers and schedulers of the models
-        self.__prepare_opt(info)
+        self._prepare_opt(info)
         # loggers
-        self.__get_logger()  # txt logger
-        self.metrics_writer = tensorboard.SummaryWriter(path / 'log') 
+        self._get_logger()  # txt logger
+        self.metrics_writer = tensorboard.SummaryWriter(path / 'log')
 
     @abstractmethod
-    def __prepare_dataloaders(self, info):
+    def _prepare_dataloaders(self, info):
         pass
 
     @abstractmethod
-    def __prepare_models(self, info):
+    def _prepare_models(self, info):
         pass
 
-    def __resuming_model(self, model):
+    def _resuming_model(self, model):
         '''Note: only for variable `self.model`'''
         if self.resume:
             checkpoint = torch.load(self.resume)
@@ -106,11 +106,11 @@ class _Trainer_Base(ABC):
             self.epoch = 0
 
     @abstractmethod
-    def __prepare_opt(self, info):
+    def _prepare_opt(self, info):
         pass
 
     @abstractmethod
-    def __reset_grad(self):
+    def _reset_grad(self):
         pass
 
     @staticmethod
@@ -135,38 +135,42 @@ class _Trainer_Base(ABC):
         """
         for epoch in range(self.epoch, self.max_epoch):
             time_begin = time.time()
-            print(f'epoch: {epoch}\t| ', end='')
+            print(f'epoch: {epoch:<5d}| ', end='')
 
             '''1. Training epoch'''
-            metrics_train = self.train_epoch(epoch+1)
+            metrics_train = self.train_epoch(epoch)
             print(self.metrics_wrapper(metrics_train, with_color=True), end='')
-            print('testing...' + '\b' * len('testing...'), end='', flush=True)
+            print('testing...' + '\b' * len('testing...'), end='', flush=True)  # TODO: DELETE
 
             '''Testing epoch'''
-            metrics_test = self.test_epoch(epoch+1)
+            metrics_test = self.test_epoch(epoch)
             time_end = time.time()
-            print(f'{self.metrics_wrapper(metrics_test, with_color=True)}time: {int(time_end - time_begin)}s', end='')
+            print(f'{self.metrics_wrapper(metrics_test, with_color=True)}time:{int(time_end - time_begin):3d}s', end='')
 
             '''Logging results'''
-            best = self.__save_model_by_test_loss(epoch, metrics_test["test_loss"])  # need to be specified by yourself
-            self.metrics_writer.add_scalar("test_acc", metrics_test["test_acc"], epoch)  # need to be specified by yourself
+            best = self._save_model_by_test_loss(epoch, metrics_test["test_loss"])  # need to be specified by yourself
+            self.metrics_writer.add_scalar("test_acc", metrics_test["test_acc"][0],
+                                           epoch)  # need to be specified by yourself
             # log to log.txt
-            self.logger.info(f'epoch: {epoch}\t| '
+            self.logger.info(f'epoch: {epoch:<5d}| '
                              f'{self.metrics_wrapper(metrics_train)}{self.metrics_wrapper(metrics_test)}'
                              f'{"saving best model..." if best else ""}')
-            self.__epoch_end(epoch)  # Can be called at the end of each epoch
+            self._epoch_end(epoch)  # Can be called at the end of each epoch
             self.epoch += 1
 
-        self.__train_end()  # Must be called at the end of the training
+        self._train_end()  # Must be called at the end of the training
 
-    def __epoch_end(self, epoch):
+    def _epoch_end(self, epoch):
         """If this function is overrided, please call super().__epoch_end() at the end of the function."""
         if self.plot_confusion and self._y_pred and self._y_true:
-            self.__plot_confusion_matrix(
+            if isinstance(self._y_pred, list) or isinstance(self._y_true, list):
+                self._y_pred = np.concatenate(self._y_pred, axis=0)
+                self._y_true = np.concatenate(self._y_true, axis=0)
+            self._plot_confusion_matrix(
                 photo_path=self.confusion_path / f'test-{str(epoch).zfill(len(str(self.max_epoch)))}.png',
                 labels=self._y_true, predicts=self._y_pred, classes=list(range(self.num_classes)))
-    
-    def __train_end(self):
+
+    def _train_end(self):
         """If this function is overrided, please call super().__epoch_end() at the end of the function."""
         self.metrics_writer.close()
 
@@ -179,8 +183,8 @@ class _Trainer_Base(ABC):
         pass
 
     @staticmethod
-    def __plot_confusion_matrix(photo_path, labels, predicts, classes, normalize=True, title='Confusion Matrix',
-                                cmap=plt.cm.Oranges):
+    def _plot_confusion_matrix(photo_path, labels, predicts, classes, normalize=True, title='Confusion Matrix',
+                               cmap=plt.cm.Oranges):
         FONT_SIZE = 10
         cm = confusion_matrix(labels, predicts, labels=list(range(len(classes))))
         if normalize:
@@ -208,10 +212,10 @@ class _Trainer_Base(ABC):
                     )
 
     @staticmethod
-    def __get_object(module, s: str, parameter: dict):
+    def _get_object(module, s: str, parameter: dict):
         return getattr(module, s)(**parameter)
 
-    def __get_logger(self):
+    def _get_logger(self):
         self.logger = logging.getLogger('train')
         self.logger.setLevel(logging.INFO)
         handler = logging.FileHandler(self.log_path)
@@ -221,26 +225,26 @@ class _Trainer_Base(ABC):
         self.logger.addHandler(handler)
         self.logger.info(f'model: {type(self.model).__name__}')  # Only log name of variable `self.model`
 
-    def __save_model_by_test_loss(self, epoch, valid_loss):
+    def _save_model_by_test_loss(self, epoch, valid_loss) -> bool:
         flag = 0
         if valid_loss < self.min_valid_loss:
             flag = 1
             self.min_valid_loss = valid_loss
-            if epoch % self.save_period == 0:
+            if epoch % self.save_period == (__period := self.save_period-1):
                 print(' | saving best model and checkpoint...')
-                self.__save_checkpoint(epoch, True)
-                self.__save_checkpoint(epoch, False)
+                self._save_checkpoint(epoch, True)
+                self._save_checkpoint(epoch, False)
             else:
                 print(' | saving best model...')
-                self.__save_checkpoint(epoch, True)
+                self._save_checkpoint(epoch, True)
         elif epoch % self.save_period == 0:
             print(' | saving checkpoint...')
-            self.__save_checkpoint(epoch, False)
+            self._save_checkpoint(epoch, False)
         else:
             print()
         return flag
 
-    def __save_checkpoint(self, epoch, save_best=False):
+    def _save_checkpoint(self, epoch, save_best=False):
         arch = type(self.model).__name__
         state = {
             'arch': arch,

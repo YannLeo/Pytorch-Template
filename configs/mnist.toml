@@ -5,19 +5,19 @@
 # @Notes   : Baseline tests. 
 # 
 
-name = 'mnist_dnn'       # where to save the results under ./saved/
+name = 'mnist_test'      # where to save the results under ./saved/
 trainer = 'BasicTrainer' # the trainer name; main procedure
 
 ############################### Important hyper parameters!!
-label_smoothing = 0.0
+label_smoothing = 0.05
 
 
 ############################### Miscellaneous
-epochs = 20
+epochs = 10
 num_classes = 10
-save_period = 9
+save_period = 5
 # Whether to plot the confusion matrices in each test epoch to ./saved/**/confusion/*.jpg.
-plot_confusion = false
+plot_confusion = true
 
 ############################### Neural Networks
 # The base model
@@ -43,4 +43,4 @@ args = { train = false }
 [lr_scheduler]
 name = "StepLR"
 init_lr = 0.0006
-args = { step_size = 60, gamma = 0.5 }
+args = { step_size = 750, gamma = 0.6 }

@@ -16,6 +16,7 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 np.random.seed(SEED)
 
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 warnings.filterwarnings('ignore')
 
 
