@@ -31,6 +31,8 @@ Hi~ 这是一个 `Pytorch` 的训练模板, 总体使用原则是: 根据一个�
 
 ## TODO List
 
+- [x] 基本结构
 - [x] `tqdm` 集成 
+- [ ] 提供 [Domain-Adversarial Training of Neural Networks, DANN](https://arxiv.org/abs/1505.07818) 示例
 - [ ] 仿照 `keras` 提供 `train_step` & `test_step` 接口
 
