@@ -115,6 +115,16 @@ class _Trainer_Base(ABC):
 
     @staticmethod
     def metrics_wrapper(metrics: dict, with_color=False) -> str:
+        """
+        It takes a dictionary of metrics and returns a string of the metrics in a nice format
+
+        Args:
+          metrics (dict): dict
+          with_color: If True, the metrics will be printed with color codes (see -> `_color_map`). Defaults to False
+
+        Returns:
+          A string of the metrics
+        """
         return (
             "".join(
                 f"{_color_map[value[1]][0]}{key}: {value[0]:.4f}{_color_map[value[1]][1]} | "
@@ -184,31 +194,30 @@ class _Trainer_Base(ABC):
     @staticmethod
     def _plot_confusion_matrix(photo_path, labels, predicts, classes, normalize=True, title='Confusion Matrix',
                                cmap=plt.cm.Oranges):
-        FONT_SIZE = 10
+        FONT_SIZE = 13
         cm = confusion_matrix(labels, predicts, labels=list(range(len(classes))))
         if normalize:
             cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
             np.set_printoptions(formatter={'float': '{: 0.2f}'.format})
-        plt.figure(figsize=(8*2, 6*2))
+        plt.figure(figsize=(11, 9))
         plt.imshow(cm, interpolation='nearest', cmap=cmap)
-        plt.title(title)
-        plt.colorbar()
-        plt.xticks(np.arange(len(classes)), classes, rotation=45, fontsize=FONT_SIZE)
-        plt.yticks(np.arange(len(classes)), classes, fontsize=FONT_SIZE)
+        plt.title(title, fontsize=FONT_SIZE)
+        plt.colorbar(extend=None)
+        plt.clim(0, 1)
+        plt.xticks(np.arange(len(classes)), classes, rotation=25, fontsize=FONT_SIZE-2)
+        plt.yticks(np.arange(len(classes)), classes, fontsize=FONT_SIZE-2)
         plt.ylim(len(classes) - 0.5, -0.5)
         fmt = '.2f' if normalize else 'd'
         thresh = cm.max() / 2.
         for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
             plt.text(j, i, format(cm[i, j], fmt),
-                     horizontalalignment="center",
-                     fontsize=FONT_SIZE+4,
-                     color="white" if cm[i, j] > thresh else "black")
+                        horizontalalignment="center",
+                        fontsize=FONT_SIZE,
+                        color="white" if cm[i, j] > thresh else "black")
         plt.tight_layout()
-        plt.ylabel('True labels')
-        plt.xlabel('Predicted labels')
-        plt.savefig(photo_path,
-                    # format="eps", bbox_inches='tight', pad_inches=0, dpi=300,
-                    )
+        plt.ylabel(r'$True\; labels$', fontsize=FONT_SIZE)
+        plt.xlabel(r'$Predicted\; labels$', fontsize=FONT_SIZE)
+        plt.savefig(photo_path, format="png", bbox_inches='tight', dpi=100)
 
     @staticmethod
     def _get_object(module, s: str, parameter: dict):
