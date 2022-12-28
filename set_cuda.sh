@@ -30,7 +30,7 @@ echo "Using GPU --> [$gpus]; Here are the details ↓↓↓ "
 nvidia-smi -i $gpus   --query-gpu=index,gpu_name,utilization.memory,memory.free --format=csv
 echo -------------------------------------------------
 # 正式设置可见 GPU
-gpus=$(echo $gpus | sed 's/4/3/g')  # 把 4 修改为 3. DGX 上的 GPU-4 的实际编号用 3, 而 nvidia-smi 给它的编号为 4. 正常服务器可删去 
+#gpus=$(echo $gpus | sed 's/4/3/g')  # 把 4 修改为 3. DGX 上的 GPU-4 的实际编号用 3, 而 nvidia-smi 给它的编号为 4. 正常服务器可删去 
 export CUDA_VISIBLE_DEVICES=$gpus
 
 
