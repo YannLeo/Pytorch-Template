@@ -1,4 +1,4 @@
-# Torch Traning Template
+# Torch Training Template
 
 ## Introduction
 
