@@ -135,24 +135,23 @@ class _Trainer_Base(ABC):
         """
         for epoch in range(self.epoch, self.max_epoch):
             time_begin = time.time()
-            print(f'epoch: {epoch:<5d}| ', end='')
 
             '''1. Training epoch'''
             metrics_train = self.train_epoch(epoch)
-            print(self.metrics_wrapper(metrics_train, with_color=True), end='')
-            print('testing...' + '\b' * len('testing...'), end='', flush=True)  # TODO: DELETE
+            print(f'Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}', end='')
+            print('testing...' + '\b' * len('testing...'), end='', flush=True)
 
-            '''Testing epoch'''
+            '''2. Testing epoch'''
             metrics_test = self.test_epoch(epoch)
             time_end = time.time()
             print(f'{self.metrics_wrapper(metrics_test, with_color=True)}time:{int(time_end - time_begin):3d}s', end='')
 
-            '''Logging results'''
+            '''3. Logging results'''
             best = self._save_model_by_test_loss(epoch, metrics_test["test_loss"])  # need to be specified by yourself
             self.metrics_writer.add_scalar("test_acc", metrics_test["test_acc"][0],
                                            epoch)  # need to be specified by yourself
             # log to log.txt
-            self.logger.info(f'epoch: {epoch:<5d}| '
+            self.logger.info(f'Epoch: {epoch:<4d}| '
                              f'{self.metrics_wrapper(metrics_train)}{self.metrics_wrapper(metrics_test)}'
                              f'{"saving best model..." if best else ""}')
             self._epoch_end(epoch)  # Can be called at the end of each epoch
@@ -220,10 +219,11 @@ class _Trainer_Base(ABC):
         self.logger.setLevel(logging.INFO)
         handler = logging.FileHandler(self.log_path)
         handler.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S')
         handler.setFormatter(formatter)
         self.logger.addHandler(handler)
-        self.logger.info(f'model: {type(self.model).__name__}')  # Only log name of variable `self.model`
+        self.logger.info(f'{time.strftime("%Y-%m-%d %p %A", time.localtime())} - '
+                         f'model: {type(self.model).__name__}')  # Only log name of variable `self.model`
 
     def _save_model_by_test_loss(self, epoch, valid_loss) -> bool:
         flag = 0

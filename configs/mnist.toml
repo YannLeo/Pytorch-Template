@@ -22,8 +22,8 @@ plot_confusion = true
 ############################### Neural Networks
 # The base model
 [model]
-name = 'MNISTEncoder'
-args = { out_dim = 10 }
+name = 'SimpleCNN2D'
+args = { num_classes = 10 }
 
 ############################### Dataloaders
 # On source domian

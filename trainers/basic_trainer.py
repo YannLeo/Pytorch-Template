@@ -9,7 +9,7 @@ import torch
 from torch import nn
 import numpy as np
 from pathlib import Path
-import tqdm  # TODO
+import tqdm  
 from ._trainer_base import _Trainer_Base
 import models
 import datasets
@@ -38,8 +38,6 @@ class BasicTrainer(_Trainer_Base):
         self.batch_size = self.dataloader_train.batch_size
         self.num_batch_train = len(self.dataloader_train)
         self.num_batch_test = len(self.dataloader_test)
-        self.interval_display_train = 1 if self.num_batch_train < 10 else self.num_batch_train // 10  # TODO
-        self.interval_display_test = 1 if self.num_batch_test < 10 else self.num_batch_test // 10
         
     def _prepare_models(self, info):
         # the name `self.model` is reserved for some functions in the base class
@@ -69,7 +67,9 @@ class BasicTrainer(_Trainer_Base):
         train_loss = 0. 
 
         self.model.train()  # don't forget
-        for batch, (data, targets) in enumerate(self.dataloader_train):
+        loop = tqdm.tqdm(enumerate(self.dataloader_train), total=self.num_batch_train, leave=False, 
+                         desc=f"Epoch {epoch}/{self.max_epoch}")
+        for batch, (data, targets) in loop:
             data, targets = data.to(self.device), targets.to(self.device) 
 
             # 1. forwarding
@@ -89,10 +89,10 @@ class BasicTrainer(_Trainer_Base):
             num_samples += data.shape[0]
             train_loss += loss.item()
             num_correct += torch.sum(predicts.argmax(dim=1) == targets).item()
-
-            if batch % self.interval_display_train == 0:
-                print('training... batch: {}/{} | loss: {:6f}'.format(batch, self.num_batch_train, loss.item()) +
-                      '\b' * len('training... batch: {}/{} | loss: {:6f}'.format(batch, self.num_batch_train, loss.item())), end='', flush=True)
+            
+            # display at the end of the progress bar
+            if batch % (__interval:=1 if self.num_batch_train > 10 else self.num_batch_train // 10) == 0:
+                loop.set_postfix(loss_step=f"{loss.item():.3f}", refresh=False)
 
         return {
             "train_loss": train_loss / self.num_batch_train,
