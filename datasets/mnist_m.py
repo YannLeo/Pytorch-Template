@@ -16,7 +16,7 @@ class MNIST_MDataset(Dataset):
             self.data, self.targets = data_dict["val"], data_dict["val_label"]  # (10000, 28, 28, 3)
 
         print()
-        self.targets = torch.tensor(self.targets).long()
+        self.targets = torch.from_numpy(self.targets).long()
 
         self.transform = transforms.Compose([
             transforms.ToTensor(),  # automatically normalize to [0, 1]

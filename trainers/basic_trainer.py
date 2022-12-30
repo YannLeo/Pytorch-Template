@@ -46,7 +46,7 @@ class BasicTrainer(_Trainer_Base):
         self.model = self.model.to(self.device)
     
     def _prepare_opt(self, info):
-        self.opt = torch.optim.Adam(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
+        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
         self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
                                               {'optimizer': self.opt, **info['lr_scheduler']['args']})  
     

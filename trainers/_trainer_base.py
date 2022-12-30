@@ -171,7 +171,7 @@ class _Trainer_Base(ABC):
 
     def _epoch_end(self, epoch):
         """If this function is overrided, please call super().__epoch_end() at the end of the function."""
-        if self.plot_confusion and self._y_pred and self._y_true:
+        if self.plot_confusion and epoch%2==0 and self._y_pred and self._y_true:
             if isinstance(self._y_pred, list) or isinstance(self._y_true, list):
                 self._y_pred = np.concatenate(self._y_pred, axis=0)
                 self._y_true = np.concatenate(self._y_true, axis=0)

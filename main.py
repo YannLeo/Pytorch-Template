@@ -13,7 +13,7 @@ SEED = 2022
 torch.manual_seed(SEED)
 torch.cuda.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.benchmark = True  # False
 np.random.seed(SEED)
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
