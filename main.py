@@ -9,7 +9,7 @@ from utils.make_dir import make_dir
 
 
 """0. Setting the random seed"""
-SEED = 2022
+SEED = 2023
 torch.manual_seed(SEED)
 torch.cuda.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True

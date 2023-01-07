@@ -158,8 +158,8 @@ class _Trainer_Base(ABC):
 
             '''3. Logging results'''
             best = self._save_model_by_test_loss(epoch, metrics_test["test_loss"])  # need to be specified by yourself
-            self.metrics_writer.add_scalar("test_acc", metrics_test["test_acc"][0],
-                                           epoch)  # need to be specified by yourself
+            self.metrics_writer.add_scalar("test_acc", metrics_test["test_acc"][0],   # need to be specified by yourself
+                                           global_step=epoch) 
             # log to log.txt
             self.logger.info(f'Epoch: {epoch:<4d}| '
                              f'{self.metrics_wrapper(metrics_train)}{self.metrics_wrapper(metrics_test)}'
