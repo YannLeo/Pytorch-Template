@@ -36,8 +36,8 @@ class MCDTrainer:
         self.__prepare_dataloaders(info)
         # Defination of models
         self.model = self.__get_object(models, info['model']['name'], info['model']['args'])
-        self.C1 = models.Classifier(in_dim=info['model']['args']['out_dim'], num_class=self.num_classes, layers=3)
-        self.C2 = models.Classifier(in_dim=info['model']['args']['out_dim'], num_class=self.num_classes, layers=2)
+        self.C1 = models.Classifier(dim_in=info['model']['args']['out_dim'], num_class=self.num_classes, layers=3)
+        self.C2 = models.Classifier(dim_in=info['model']['args']['out_dim'], num_class=self.num_classes, layers=2)
         # Optimizers and schedulers
         self.opt = torch.optim.Adam(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
         self.opt_C1 = torch.optim.Adam(params=self.C1.parameters(), lr=info['lr_scheduler']['init_lr'])

@@ -1,0 +1,58 @@
+# A config file for DANN (Domain-Adversarial Training of Neural Networks) on MNIST-M dataset
+#
+# @Time    : 23/01/07 16:59
+# @Author  : 
+# @Notes   : DANN tests. Reached 76.66% in original paper (https://arxiv.org/abs/1505.07818).
+
+name = 'dann_m_mm'      # where to save the results under ./saved/
+trainer = 'DANNTrainer' # the trainer name; main procedure
+
+############################### Important hyper parameters!!
+GRL_coeff = 1.1
+
+
+############################### Miscellaneous
+epochs = 45
+num_classes = 10
+save_period = 10
+# Whether to plot the confusion matrices in each test epoch to ./saved/**/confusion/*.jpg.
+plot_confusion = false
+
+############################### Neural Networks
+# The base model
+[model]
+name = 'SimpleCNN2D'
+args = { num_classes = 64 } # dim of the output feature vector
+
+############################### Dataloaders
+# On source domian
+[dataloader_source] # train
+args = { batch_size = 128, num_workers = 2, shuffle = true, drop_last = true, pin_memory = true }
+[dataloader_source.dataset]
+name = "MNISTDataset"
+args = { channels = 3, train = true }
+
+[dataloader_val] # test on src
+args = { batch_size = 128, num_workers = 2, shuffle = false, drop_last = true, pin_memory = true }
+[dataloader_val.dataset]
+name = "MNISTDataset"
+args = { channels = 3, train = false }
+
+# On target domain
+[dataloader_target] # train
+args = { batch_size = 128, num_workers = 2, shuffle = true, drop_last = true, pin_memory = true }
+[dataloader_target.dataset]
+name = "MNIST_MDataset"
+args = { train = true }
+
+[dataloader_test] # test on tgt
+args = { batch_size = 128, num_workers = 2, shuffle = false, drop_last = true, pin_memory = true }
+[dataloader_test.dataset]
+name = "MNIST_MDataset"
+args = { train = false }
+
+############################### Learning Rate Schedulers for Optimizers
+[lr_scheduler]
+name = "StepLR"
+init_lr = 0.001
+args = { step_size = 3000, gamma = 0.6 }

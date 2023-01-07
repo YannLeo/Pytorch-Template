@@ -12,11 +12,12 @@ def Projector(in_dim, out_dim, intermediate_dim=128, layers: Literal[2, 3] = 2):
     )
 
 
-def Classifier(in_dim, num_class, intermediate_dim=128, layers: Literal[2, 3] = 2):
-    __inter_layers = [nn.Linear(intermediate_dim, intermediate_dim), nn.LeakyReLU(0.03)] if layers == 3 else []
+def Classifier(input_dim, num_class, intermediate_dim=128, layers: Literal[2, 3] = 2):
+    __inter_layers = [nn.Linear(intermediate_dim, intermediate_dim), nn.ELU()] if layers == 3 else []
     return nn.Sequential(
-        nn.Linear(in_dim, intermediate_dim),
-        nn.LeakyReLU(0.03),
+        nn.ELU(),
+        nn.Linear(input_dim, intermediate_dim),
+        nn.ELU(),
         *__inter_layers,
         # nn.Dropout(0.5),
         nn.Linear(intermediate_dim, num_class)
