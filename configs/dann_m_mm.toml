@@ -1,4 +1,5 @@
-# A config file for DANN (Domain-Adversarial Training of Neural Networks) on MNIST-M dataset
+# A config file for DANN (Domain-Adversarial Training of Neural Networks) on 
+# MNIST and MNIST-M dataset
 #
 # @Time    : 23/01/07 16:59
 # @Author  : 
@@ -55,4 +56,4 @@ args = { train = false }
 [lr_scheduler]
 name = "StepLR"
 init_lr = 0.001
-args = { step_size = 3000, gamma = 0.6 }
+args = { step_size = 2500, gamma = 0.6 }

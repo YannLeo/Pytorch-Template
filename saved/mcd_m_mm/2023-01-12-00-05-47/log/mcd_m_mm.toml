@@ -9,8 +9,8 @@ name = 'mcd_m_mm'      # where to save the results under ./saved/
 trainer = 'MCDTrainer' # the trainer name; main procedure
 
 ############################### Important hyper parameters!!
-discrepancy_steps = 4
-discrepancy_weight = 15
+discrepancy_steps = 5
+discrepancy_weight = 10
 
 
 ############################### Miscellaneous

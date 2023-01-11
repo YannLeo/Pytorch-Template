@@ -32,10 +32,10 @@ class _GradientReverseFunction(torch.autograd.Function):
 
 class _GradientReverseLayer(nn.Module):
     """
-    https://github.com/thuml/Transfer-Learning-Library/blob/master/tllib/modules/grl.py
+    Ref: https://github.com/thuml/Transfer-Learning-Library/blob/master/tllib/modules/grl.py
 
     Args:
-          coeff: The coefficient of the reversed gradient, and must be a positive number.
+      coeff: The coefficient of the reversed gradient, and must be a positive number.
     """
 
     def __init__(self, coeff):
@@ -55,6 +55,7 @@ class DANNTrainer(_Trainer_Base):
     def __init__(self, info: dict, resume=None, path=Path(), device=torch.device('cuda')):
         # Dataloaders, models, optimizers and loggers are prepared in super().__init__()
         super().__init__(info, resume, path, device)
+        
         self.loss_func = nn.CrossEntropyLoss()
         self.grl = _GradientReverseLayer(coeff=info['GRL_coeff'])
 

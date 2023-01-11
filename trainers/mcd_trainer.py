@@ -1,332 +1,238 @@
-import itertools
-import logging
-import time
-from pathlib import Path
-import matplotlib.pyplot as plt
-import numpy as np
+# @.@ coding  : utf-8 ^_^
+# @Author     : Leon Rein
+# @Time       : 23/01/11 ~ 22:07:25
+# @File       : mcd_trainer.py
+# @Note       : A simple implementation of MCD (Maximum Classifier Discrepancy for
+#               Unsupervised Domain Adaptation) in PyTorch
+
+
 import torch
 from torch import nn
-from sklearn.metrics import confusion_matrix
-from torch.utils import tensorboard
-import datasets
+import numpy as np
+from pathlib import Path
+import tqdm
+from ._trainer_base import _Trainer_Base
 import models
+import datasets
 
 
-class MCDTrainer:
+class MCDTrainer(_Trainer_Base):
     """
-    https://arxiv.org/abs/1712.02560
-    https://github.com/mil-tokyo/MCD_DA
+    A simple implementation of MCD (https://arxiv.org/abs/1712.02560). The most essential 
+    part of the code are the functions train_epoch() and test_epoch().
+
+    Ref: https://github.com/mil-tokyo/MCD_DA
     """
 
     def __init__(self, info: dict, resume=None, path=Path(), device=torch.device('cuda')):
-        # Basic variables
-        self.info = info  # dict of configs from toml file
-        self.resume = resume  # path to checkpoint
-        self.device = device
-        self.max_epoch = info['epochs']
-        self.num_classes = info['num_classes']
-        self.log_path = path / 'log' / 'log.txt'
-        self.model_path = path / 'model'
-        self.confusion_path = path / 'confusion'
-        self.save_period = info['save_period']
-        self.min_valid_loss = np.inf
-        self.min_valid_pretrain_loss = np.inf
-        self.criterion = nn.CrossEntropyLoss()
-        # Dataloaders
-        self.__prepare_dataloaders(info)
-        # Defination of models
-        self.model = self.__get_object(models, info['model']['name'], info['model']['args'])
-        self.C1 = models.Classifier(dim_in=info['model']['args']['out_dim'], num_class=self.num_classes, layers=3)
-        self.C2 = models.Classifier(dim_in=info['model']['args']['out_dim'], num_class=self.num_classes, layers=2)
-        # Optimizers and schedulers
-        self.opt = torch.optim.Adam(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
-        self.opt_C1 = torch.optim.Adam(params=self.C1.parameters(), lr=info['lr_scheduler']['init_lr'])
-        self.opt_C2 = torch.optim.Adam(params=self.C2.parameters(), lr=info['lr_scheduler']['init_lr'])
-        self.lr_scheduler = self.__get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
-                                              {'optimizer': self.opt, **info['lr_scheduler']['args']})
-        self.lr_scheduler_C1 = self.__get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
-                                                 {'optimizer': self.opt_C1, **info['lr_scheduler']['args']})
-        self.lr_scheduler_C2 = self.__get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
-                                                 {'optimizer': self.opt_C2, **info['lr_scheduler']['args']})
-        # Prepare for resuming models
-        self.__resuming_models()
+        # Dataloaders, models, optimizers and loggers are prepared in super().__init__()
+        super().__init__(info, resume, path, device)
+
+        self.loss_func = nn.CrossEntropyLoss()
+        self.discrepancy_steps = info["discrepancy_steps"]
+        self.discrepancy_weight = info["discrepancy_weight"]
+
+    def _prepare_dataloaders(self, info):
+        """
+        Prepare the dataloaders for the source and target domains.
+        """
+        # datasets of source domain
+        self.dataset_source = self._get_object(datasets, info['dataloader_source']['dataset']['name'],
+                                               info['dataloader_source']['dataset']['args'])
+        self.dataset_val = self._get_object(datasets, info['dataloader_val']['dataset']['name'],
+                                            info['dataloader_val']['dataset']['args'])
+        self.dataloader_source = torch.utils.data.DataLoader(dataset=self.dataset_source,
+                                                             **info['dataloader_source']['args'])
+        self.dataloader_val = torch.utils.data.DataLoader(dataset=self.dataset_val,
+                                                          **info['dataloader_val']['args'])
+        # datasets of target domain
+        self.dataset_target = self._get_object(datasets, info['dataloader_target']['dataset']['name'],
+                                               info['dataloader_target']['dataset']['args'])
+        self.dataset_test = self._get_object(datasets, info['dataloader_test']['dataset']['name'],
+                                             info['dataloader_test']['dataset']['args'])
+        self.dataloader_target = torch.utils.data.DataLoader(dataset=self.dataset_target,
+                                                             **info['dataloader_target']['args'])
+        self.dataloader_test = torch.utils.data.DataLoader(dataset=self.dataset_test,
+                                                           **info['dataloader_test']['args'])
+        # helper constants
+        self.batch_size = self.dataloader_source.batch_size
+        self.num_batches_train = min(len(self.dataloader_source), len(self.dataloader_target))
+        self.num_batches_test = len(self.dataloader_test)  # we don't use the validation set (dataset_val)
+
+    def _prepare_models(self, info):
+        """
+        Prepare the models.
+        """
+        # the name `self.model` is reserved for some functions in the base class
+        self.model = self._get_object(models, info['model']['name'], info['model']['args'])
+        self._resuming_model(self.model)  # Prepare for resuming models
+        self.C1 = models.Classifier(
+            input_dim=info['model']['args']['num_classes'], num_class=self.num_classes,
+            intermediate_dim=128, layers=3)
+        self.C2 = models.Classifier(
+            input_dim=info['model']['args']['num_classes'], num_class=self.num_classes,
+            intermediate_dim=128, layers=2)
+
         self.model = self.model.to(self.device)
         self.C1 = self.C1.to(self.device)
         self.C2 = self.C2.to(self.device)
 
-        # loggers
-        self.__get_logger()  # txt logger
-        self.metric_writer = tensorboard.SummaryWriter(path / 'log')  # tensorboard logger
-
-    def __prepare_dataloaders(self, info):
-        self.dataset_source = self.__get_object(datasets, info['dataloader_source']['dataset']['name'],
-                                                info['dataloader_source']['dataset']['args'])
-        self.dataset_target = self.__get_object(datasets, info['dataloader_target']['dataset']['name'],
-                                                info['dataloader_target']['dataset']['args'])
-        self.dataset_valid = self.__get_object(datasets, info['dataloader_valid']['dataset']['name'],
-                                               info['dataloader_valid']['dataset']['args'])
-        self.dataset_test = self.__get_object(datasets, info['dataloader_test']['dataset']['name'],
-                                              info['dataloader_test']['dataset']['args'])
-        self.dataloader_source = torch.utils.data.DataLoader(dataset=self.dataset_source,
-                                                             **info['dataloader_source']['args'])
-        self.dataloader_target = torch.utils.data.DataLoader(dataset=self.dataset_target,
-                                                             **info['dataloader_target']['args'])
-        self.dataloader_valid = torch.utils.data.DataLoader(dataset=self.dataset_valid,
-                                                            **info['dataloader_valid']['args'])
-        self.dataloader_test = torch.utils.data.DataLoader(dataset=self.dataset_test,
-                                                           **info['dataloader_test']['args'])
-
-    def __resuming_models(self):
-        if self.resume:
-            checkpoint = torch.load(self.resume)
-            state_dict = checkpoint['state_dict']
-            self.model.load_state_dict(state_dict['model'])
-            self.epoch = checkpoint['epoch'] + 1
-        else:
-            self.epoch = 0
-
-    def __reset_grad(self):
-        self.opt.zero_grad()
-        self.opt_C1.zero_grad()
-        self.opt_C2.zero_grad()
-
-    def train(self):  # sourcery skip: low-code-quality
+    def _prepare_opt(self, info):
         """
-        Call train_epoch() and test_epoch() for each epoch and log the results.
+        Prepare the optimizers and corresponding learning rate schedulers.
         """
-        self.batch_size = min(self.dataloader_source.batch_size, self.dataloader_target.batch_size)
-        self.num_train = len(self.dataset_source)
-        self.num_target = len(self.dataset_target)
-        self.num_test = len(self.dataset_test)
-        self.num_train_batch = min(self.num_train // self.dataloader_source.batch_size,
-                                   self.num_target // self.dataloader_target.batch_size)
-        self.num_test_batch = self.num_test // self.dataloader_test.batch_size
-        self.train_display = 1 if self.num_train_batch < 10 else self.num_train_batch // 10
-        self.test_display = 1 if self.num_test_batch < 10 else self.num_test_batch // 10
-        begin_epoch = self.epoch
+        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
+        self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
+                                             {'optimizer': self.opt, **info['lr_scheduler']['args']})
+        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
+        self.opt_C1 = torch.optim.Adam(params=self.C1.parameters(), lr=info['lr_scheduler_C']['init_lr'])
+        self.opt_C2 = torch.optim.Adam(params=self.C2.parameters(), lr=info['lr_scheduler_C']['init_lr'])
 
-        for epoch in range(begin_epoch, self.max_epoch):
-            time_begin = time.time()
-            print(f'epoch: {epoch + 1}\t| ', end='')
+        self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
+                                             {'optimizer': self.opt, **info['lr_scheduler']['args']})
+        self.lr_scheduler_C1 = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler_C']['name'],
+                                                {'optimizer': self.opt_C1, **info['lr_scheduler']['args']})
+        self.lr_scheduler_C2 = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler_C']['name'],
+                                                {'optimizer': self.opt_C2, **info['lr_scheduler']['args']})
 
-            '''Training epoch'''
-            train_loss1, train_loss2, train_dis, train_acc, train_labels, train_predicts = self.train_epoch(epoch + 1)
-            print(f'train_loss1: {train_loss1:.6f} | train_loss2: {train_loss2:.6f} | train_dis: {train_dis:6f} | '
-                  f'train_acc: {train_acc:.6f} | ', end='')
-            print('testing...' + '\b' * len('testing...'), end='', flush=True)
-
-            '''Testing epoch'''
-            test_loss, test_acc1, test_acc2, test_acc_total, test_predicts, test_labels = self.test_epoch(epoch+1)
-            time_end = time.time()
-            print(
-                f'test_loss: {test_loss:6f} | test_acc1: {test_acc1:6f} | test_acc2: {test_acc2:.6f} | '
-                f'test_acc_total: {test_acc_total:.6f} | time: {int(time_end - time_begin)}s', end='')
-
-            '''Logging results'''
-            best = self.__save_model_by_valid_loss(epoch + 1, test_loss)
-            self.logger.info(
-                f'epoch: {epoch + 1}\t| train_loss1: {train_loss1:.6f} | train_loss2: {train_loss2:.6f} | '
-                f'train_dis: {train_dis:.6f} | train_acc: {train_acc:.6f} | '
-                f'test_loss: {test_loss:.6f} | test_acc1: {test_acc1:.6f} | '
-                f'test_acc2: {test_acc2:.6f} | test_acc_total: {test_acc_total:.6f}{" | saving best model..." if best else ""}')
-            self.metric_writer.add_scalar("test_acc", test_acc_total, self.epoch)
-            self.epoch += 1
-
-            if 'confusion' in self.info:
-                if self.info['confusion'].get('train', False):
-                    self.__plot_confusion_matrix(photo_path=self.confusion_path / f'train-{str(epoch + 1).zfill(len(str(self.max_epoch)))}.png',
-                                                 labels=train_labels, predicts=train_predicts, classes=list(range(self.num_classes)), normalize=True)
-
-                if self.info['confusion'].get('test', False):
-                    self.__plot_confusion_matrix(photo_path=self.confusion_path / f'test-{str(epoch + 1).zfill(len(str(self.max_epoch)))}.png',
-                                                 labels=test_labels, predicts=test_predicts, classes=list(range(self.num_classes)), normalize=True)
+    def _reset_grad(self):
+        """
+        Reset gradients of all trainable parameters.
+        """
+        self.opt.zero_grad(set_to_none=True)
+        self.opt_C1.zero_grad(set_to_none=True)
+        self.opt_C2.zero_grad(set_to_none=True)
 
     def train_epoch(self, epoch):  # sourcery skip: low-code-quality
         """
         Main training process
         """
-        train_loss1 = 0
-        train_loss2 = 0
-        train_discrepancy = 0
-        train_acc_num = 0
-        train_num = 0
-        predict, label = [], []
+        # Helper variables
+        train_loss_discrepancy = 0
+        train_loss_C1, train_loss_C2 = 0, 0
+        num_samples = 0  # source domain only
+        num_correct_C1_src, num_correct_C2_src = 0, 0  # on source domain
+        num_correct_tgt = 0  # ensemble and comprehensive result of C1 and C2
+
         self.model.train()
         self.C1.train()
         self.C2.train()
+        loop = tqdm.tqdm(enumerate(zip(self.dataloader_source, self.dataloader_target)),
+                         total=self.num_batches_train, leave=False,
+                         desc=f"Epoch {epoch}/{self.max_epoch}")
+        for batch, ((data_s, label_s), (data_t, label_t)) in loop:  # label_t is merely for metrics
+            data_s, data_t = data_s.to(self.device), data_t.to(self.device)
+            label_s, label_t = label_s.to(self.device), label_t.to(self.device)
+            num_samples += data_s.shape[0]
 
-        for batch, data_pack in enumerate(zip(self.dataloader_source, self.dataloader_target)):
-            # `index_t` records the index of target data in the whole dataset, for pseudo labeling.
-            # We do not use label_t here.
-            (data_s, label_s, _), (data_t, _, _) = data_pack
-            data_s, data_t, label_s = data_s.to(self.device), data_t.to(self.device), label_s.to(self.device)
-
-            label.append(label_s.cpu().detach().numpy())
-            train_num += label_s.shape[0]
-
-            """step 1"""
-            self.__reset_grad()
-            feat_s = self.model(data_s)
-            output_s1 = self.C1(feat_s)
-            output_s2 = self.C2(feat_s)
-            loss_s1 = self.criterion(output_s1, label_s)
-            loss_s2 = self.criterion(output_s2, label_s)
+            """step 1. Training on source domain only"""
+            feature_s = self.model(data_s)
+            output_s1 = self.C1(feature_s)
+            output_s2 = self.C2(feature_s)
+            loss_s1 = self.loss_func(output_s1, label_s)
+            loss_s2 = self.loss_func(output_s2, label_s)
             loss_s = loss_s1 + loss_s2
+            self._reset_grad()
             loss_s.backward()
             self.opt.step()
             self.opt_C1.step()
             self.opt_C2.step()
 
-            """step 2"""
-            self.__reset_grad()
-            feat_s = self.model(data_s)
-            output_s1 = self.C1(feat_s)
-            output_s2 = self.C2(feat_s)
-            feat_t = self.model(data_t)
-            output_t1 = self.C1(feat_t)
-            output_t2 = self.C2(feat_t)
-            loss_s1 = self.criterion(output_s1, label_s)
-            loss_s2 = self.criterion(output_s2, label_s)
+            """step 2. Maximizing discrepancy"""
+            feature_s = self.model(data_s)
+            output_s1 = self.C1(feature_s)
+            output_s2 = self.C2(feature_s)
+            feature_t = self.model(data_t)
+            output_t1 = self.C1(feature_t)
+            output_t2 = self.C2(feature_t)
+            loss_s1 = self.loss_func(output_s1, label_s)
+            loss_s2 = self.loss_func(output_s2, label_s)
             loss_s = loss_s1 + loss_s2
             loss_dis = self.discrepancy(output_t1, output_t2)
-            loss = loss_s - loss_dis * self.info['discrepancy_weight']
+            loss = loss_s - loss_dis * self.discrepancy_weight
+            self._reset_grad()
             loss.backward()
             self.opt_C1.step()
             self.opt_C2.step()
+            # Computing metrics
+            train_loss_C1 += loss_s1.item()
+            train_loss_C2 += loss_s2.item()
+            num_correct_C1_src += (output_s1.argmax(dim=1) == label_s).sum().item()
+            num_correct_C2_src += (output_s2.argmax(dim=1) == label_s).sum().item()
 
-            predict.append(torch.argmax(output_s1+output_s2, dim=1).cpu().detach().numpy())
-            train_acc_num += torch.sum(torch.argmax(output_s1+output_s2, dim=1) == label_s).item()
-
-            """step 3"""
-            for _ in range(self.info['discrepancy_steps']):
-                self.__reset_grad()
-                feat_t = self.model(data_t)
-                output_t1 = self.C1(feat_t)
-                output_t2 = self.C2(feat_t)
+            """step 3. Minimizing discrepancy"""
+            for _ in range(self.discrepancy_steps):
+                feature_t = self.model(data_t)
+                output_t1 = self.C1(feature_t)
+                output_t2 = self.C2(feature_t)
                 loss_dis = self.discrepancy(output_t1, output_t2)
+                self._reset_grad()
                 loss_dis.backward()
                 self.opt.step()
+            # Computing metrics
+            num_correct_tgt += ((output_t1 + output_t2).argmax(dim=1) == label_t).sum().item()
+            train_loss_discrepancy += loss_dis.item()
 
-            train_loss1 += loss_s1.item()
-            train_loss2 += loss_s2.item()
-            train_discrepancy += loss_dis.item()
+            # Updating learning rate by step
             self.lr_scheduler.step()
             self.lr_scheduler_C1.step()
             self.lr_scheduler_C2.step()
 
-            if batch % self.train_display == 0:
-                print('training... batch: {}/{} Loss1: {:.6f} Loss2: {:.6f} Discrepancy: {:.6f}'.format(batch, self.num_train_batch, loss_s1.item(), loss_s2.item(), loss_dis.item()) +
-                      '\b' * len('training... batch: {}/{} Loss1: {:.6f} Loss2: {:.6f} Discrepancy: {:.6f}'.format(batch, self.num_train_batch, loss_s1.item(), loss_s2.item(), loss_dis.item())), end='', flush=True)
+            # Display at the end of the progress bar
+            if batch % (__interval := 1 if self.num_batches_train > 10 else self.num_batches_train // 10) == 0:
+                loop.set_postfix(losses=f"{loss_s1.item():.3f} "
+                                        f"{loss_s2.item():.3f} "
+                                        f"{loss_dis.item():.3f}", refresh=False)
 
-        predict = np.concatenate(predict, axis=0)
-        label = np.concatenate(label, axis=0)
-        return train_loss1 / self.num_train_batch, train_loss2 / self.num_train_batch, train_discrepancy / self.num_train_batch, train_acc_num / train_num, label, predict
+        return {
+            "train_loss_C1": train_loss_C1 / self.num_batches_train,
+            "train_loss_C2": train_loss_C2 / self.num_batches_train,
+            "train_loss_dis": train_loss_discrepancy / self.num_batches_train,
+            "acc_C1_s": num_correct_C1_src / num_samples,
+            "acc_C2_s": num_correct_C2_src / num_samples,
+            "acc_tgt": (num_correct_tgt / num_samples, 'green')
+        }
 
     def test_epoch(self, epoch):
-        # on target domain
-        test_loss = 0
-        test_num = 0
-        test_acc_num1 = 0
-        test_acc_num2 = 0
-        test_acc_num_total = 0
+        """Only relates to the test set of target domain."""
+        # Helper variables
+        self._y_pred, self._y_true = [], []  # to plot confusion matrix of test dataset
+        num_correct, num_correct_C1, num_correct_C2, num_samples = 0, 0, 0, 0
+        test_loss = 0.
 
-        predict, label = [], []
         self.model.eval()
         self.C1.eval()
         self.C2.eval()
         with torch.no_grad():
-            for data, targets, _ in self.dataloader_test:
+            for data, targets in self.dataloader_test:
+                if self.plot_confusion:
+                    self._y_true.append(targets.numpy())
+
                 data, targets = data.to(self.device), targets.to(self.device)
-                label.append(targets.cpu().detach().numpy())
-                test_num += data.shape[0]
 
-                feat = self.model(data)
-                output1 = self.C1(feat)
-                output2 = self.C2(feat)
-                test_loss += self.criterion(output1, targets)
+                # Forwarding
+                feature = self.model(data)
+                output1 = self.C1(feature)
+                output2 = self.C2(feature)
+                # Computing metrics
+                num_samples += data.shape[0]
+                test_loss += (self.loss_func(output1, targets) +
+                              self.loss_func(output2, targets)).item() / 2
+                predicts = torch.argmax(output1+output2, dim=1)  # ensemble
+                num_correct += torch.sum(predicts == targets).item()
+                num_correct_C1 += torch.sum(torch.argmax(output1, dim=1) == targets).item()
+                num_correct_C2 += torch.sum(torch.argmax(output2, dim=1) == targets).item()
 
-                predict.append(torch.argmax(output1+output2, dim=1).cpu().detach().numpy())
-                test_acc_num1 += torch.sum(torch.argmax(output1, dim=1) == targets).item()
-                test_acc_num2 += torch.sum(torch.argmax(output2, dim=1) == targets).item()
-                test_acc_num_total += torch.sum(torch.argmax(output1+output2, dim=1) == targets).item()
+                if self.plot_confusion:
+                    self._y_pred.append(predicts.cpu().numpy())
 
-        predict = np.concatenate(predict, axis=0)
-        label = np.concatenate(label, axis=0)
-        return test_loss / self.num_test_batch, test_acc_num1 / test_num, test_acc_num2 / test_num, test_acc_num_total / test_num, label, predict
-
-    def discrepancy(self, out1, out2):
-        return torch.mean(torch.abs(torch.softmax(out1, dim=1) - torch.softmax(out2, dim=1)))
-
-    def __plot_confusion_matrix(self, photo_path, labels, predicts, classes, normalize=False, title='Confusion matrix', cmap=plt.cm.Oranges):
-        FONT_SIZE = 9
-        cm = confusion_matrix(labels, predicts, labels=list(range(len(classes))))
-        if normalize:
-            cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-            np.set_printoptions(formatter={'float': '{: 0.2f}'.format})
-        plt.figure(figsize=(8*2, 6*2))
-        plt.imshow(cm, interpolation='nearest', cmap=cmap)
-        plt.title(title)
-        plt.colorbar()
-        tick_marks = np.arange(len(classes))
-        plt.xticks(tick_marks, classes, rotation=45, fontsize=FONT_SIZE)
-        plt.yticks(tick_marks, classes, fontsize=FONT_SIZE)
-        plt.ylim(len(classes) - 0.5, -0.5)
-        fmt = '.2f' if normalize else 'd'
-        thresh = cm.max() / 2.
-        for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-            plt.text(j, i, format(cm[i, j], fmt),
-                     horizontalalignment="center",
-                     fontsize=FONT_SIZE+3,
-                     color="white" if cm[i, j] > thresh else "black")
-        plt.tight_layout()
-        plt.ylabel('True label')
-        plt.xlabel('Predicted label')
-        plt.savefig(photo_path)
-
-    def __get_object(self, module, s: str, parameter: dict):
-        return getattr(module, s)(**parameter)
-
-    def __get_logger(self):
-        self.logger = logging.getLogger('train')
-        self.logger.setLevel(logging.INFO)
-        handler = logging.FileHandler(self.log_path)
-        handler.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
-
-        self.logger.info(f'model: {type(self.model).__name__}')
-
-    def __save_model_by_valid_loss(self, epoch, valid_loss):
-        flag = 0
-        if valid_loss < self.min_valid_loss:
-            flag = 1
-            self.min_valid_loss = valid_loss
-            if epoch % self.save_period == 0:
-                print(' | saving best model and checkpoint...')
-                self.__save_checkpoint(epoch, True)
-                self.__save_checkpoint(epoch, False)
-            else:
-                print(' | saving best model...')
-                self.__save_checkpoint(epoch, True)
-        elif epoch % self.save_period == 0:
-            print(' | saving checkpoint...')
-            self.__save_checkpoint(epoch, False)
-        else:
-            print()
-        return flag
-
-    def __save_checkpoint(self, epoch, save_best=False):
-        arch = type(self.model).__name__
-        state = {
-            'arch': arch,
-            'epoch': epoch,
-            'state_dict': self.model.state_dict(),
-            'loss_best': self.min_valid_pretrain_loss,
+        return {
+            "test_loss": test_loss / self.num_batches_test,
+            "test_acc": (num_correct / num_samples, 'blue'),
+            "test_acc_C1": num_correct_C1 / num_samples,
+            "test_acc_C2": num_correct_C2 / num_samples,
         }
-        if save_best:
-            best_path = str(self.model_path / ('model_best.pth'))
-            torch.save(state, best_path)
-        else:
-            path = str(self.model_path / f'checkpoint-epoch{epoch}.pth')
-            torch.save(state, path)
+
+    @staticmethod
+    def discrepancy(out1, out2):
+        return torch.mean(torch.abs(torch.softmax(out1, dim=1) - torch.softmax(out2, dim=1)))

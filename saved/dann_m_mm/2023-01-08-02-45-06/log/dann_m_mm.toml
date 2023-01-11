@@ -1,16 +1,14 @@
-# A config file for MCD (Maximum Classifier Discrepancy for Unsupervised Domain
-# Adaptation) on MNIST and MNIST-M dataset
+# A config file for DANN (Domain-Adversarial Training of Neural Networks) on MNIST-M dataset
 #
-# @Time    : 23/01/11 20:04
+# @Time    : 23/01/07 16:59
 # @Author  : 
-# @Notes   : MCD tests (https://arxiv.org/abs/1712.02560).
+# @Notes   : DANN tests. Reached 76.66% in original paper (https://arxiv.org/abs/1505.07818).
 
-name = 'mcd_m_mm'      # where to save the results under ./saved/
-trainer = 'MCDTrainer' # the trainer name; main procedure
+name = 'dann_m_mm'      # where to save the results under ./saved/
+trainer = 'DANNTrainer' # the trainer name; main procedure
 
 ############################### Important hyper parameters!!
-discrepancy_steps = 4
-discrepancy_weight = 15
+GRL_coeff = 1.1
 
 
 ############################### Miscellaneous
@@ -23,7 +21,7 @@ plot_confusion = false
 ############################### Neural Networks
 # The base model
 [model]
-name = 'SimpleCNN2D'  # MNISTEncoder, out_dim
+name = 'SimpleCNN2D'
 args = { num_classes = 64 } # dim of the output feature vector
 
 ############################### Dataloaders
@@ -56,10 +54,5 @@ args = { train = false }
 ############################### Learning Rate Schedulers for Optimizers
 [lr_scheduler]
 name = "StepLR"
-init_lr = 0.0006
-args = { step_size = 2500, gamma = 0.6 }
-
-[lr_scheduler_C]
-name = "StepLR"
-init_lr = 0.0003
-args = { step_size = 2500, gamma = 0.6 }
+init_lr = 0.001
+args = { step_size = 3000, gamma = 0.6 }
