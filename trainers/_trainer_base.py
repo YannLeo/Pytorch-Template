@@ -159,7 +159,7 @@ class _Trainer_Base(ABC):
             '''3. Logging results'''
             best = self._save_model_by_test_loss(epoch, metrics_test["test_loss"])  # need to be specified by yourself
             self.metrics_writer.add_scalar("test_acc", metrics_test["test_acc"][0],   # need to be specified by yourself
-                                           global_step=epoch) 
+                                           global_step=epoch)
             # log to log.txt
             self.logger.info(f'Epoch: {epoch:<4d}| '
                              f'{self.metrics_wrapper(metrics_train)}{self.metrics_wrapper(metrics_test)}'
@@ -170,8 +170,8 @@ class _Trainer_Base(ABC):
         self._train_end()  # Must be called at the end of the training
 
     def _epoch_end(self, epoch):
-        """If this function is overrided, please call super().__epoch_end() at the end of the function."""
-        if self.plot_confusion and epoch%2==0 and self._y_pred and self._y_true:
+        """If this function is overrided, please call super()._epoch_end() at the end of the function."""
+        if self.plot_confusion and epoch % 2 == 0 and self._y_pred and self._y_true:
             if isinstance(self._y_pred, list) or isinstance(self._y_true, list):
                 self._y_pred = np.concatenate(self._y_pred, axis=0)
                 self._y_true = np.concatenate(self._y_true, axis=0)
@@ -180,7 +180,7 @@ class _Trainer_Base(ABC):
                 labels=self._y_true, predicts=self._y_pred, classes=list(range(self.num_classes)))
 
     def _train_end(self):
-        """If this function is overrided, please call super().__epoch_end() at the end of the function."""
+        """If this function is overrided, please call super()._train_end() at the end of the function."""
         self.metrics_writer.close()
 
     @abstractmethod
@@ -211,9 +211,9 @@ class _Trainer_Base(ABC):
         thresh = cm.max() / 2.
         for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
             plt.text(j, i, format(cm[i, j], fmt),
-                        horizontalalignment="center",
-                        fontsize=FONT_SIZE,
-                        color="white" if cm[i, j] > thresh else "black")
+                     horizontalalignment="center",
+                     fontsize=FONT_SIZE,
+                     color="white" if cm[i, j] > thresh else "black")
         plt.tight_layout()
         plt.ylabel(r'$True\; labels$', fontsize=FONT_SIZE)
         plt.xlabel(r'$Predicted\; labels$', fontsize=FONT_SIZE)
