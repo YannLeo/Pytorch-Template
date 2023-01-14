@@ -1,7 +1,5 @@
 # Torch Training Template
 
-[TOC]
-
 ## 1. Introduction
 
 Hi~ 这是一个 `Pytorch` 的训练模板, 总体使用原则是: 根据指定的 `toml` 配置文件载入核心训练逻辑即 `trainer` 对象, 并调用构造函数 `__init__()` 从配置文件中载入相应的各个模块及参数(模型, 优化器, 数据集等); 最后调用 `trainer` 中的 `train()` 方法开始一次训练, 期间也会有日志输出. 简而言之, 它具有以下优点:
@@ -112,6 +110,8 @@ python main.py -c configs/mnist.toml
 - 如果机器性能较差, 请将 `toml` 配置中传给 `dataloader` 的 `pin_memory` 设为 `false`, 并调小 `num_workers`
 
 - 在含有 `__init__.py` 的文件夹中建立新文件或模块时, 需要在 `__init__.py` 中 `import` 一下该模块, 否则会找不到
+
+- 文件下不动可以使用 [fastgithub](https://github.com/dotnetcore/fastgithub), 或用此链接: [蓝奏云](https://wwhy.lanzoum.com/i5yKC0l0ve9g)
 
 ## TODO List
 
