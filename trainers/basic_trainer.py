@@ -76,7 +76,7 @@ class BasicTrainer(_Trainer_Base):
         train_loss = 0. 
 
         self.model.train()  # don't forget
-        loop = tqdm.tqdm(enumerate(self.dataloader_train), total=self.num_batches_train, leave=False, 
+        loop = tqdm.tqdm(enumerate(self.dataloader_train), total=self.num_batches_train, leave=False, colour='#c95863', 
                          desc=f"Epoch {epoch}/{self.max_epoch}")
         for batch, (data, targets) in loop:
             data, targets = data.to(self.device), targets.to(self.device) 
@@ -99,7 +99,7 @@ class BasicTrainer(_Trainer_Base):
             num_correct += torch.sum(output.argmax(dim=1) == targets).item()
             
             # Display at the end of the progress bar
-            if batch % (__interval:=1 if self.num_batches_train > 10 else self.num_batches_train // 10) == 0:
+            if batch % (__interval:=1 if self.num_batches_train < 10 else self.num_batches_train // 10) == 0:
                 loop.set_postfix(loss_step=f"{loss.item():.3f}", refresh=False)
 
         return {

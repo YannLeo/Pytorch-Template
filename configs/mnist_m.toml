@@ -28,13 +28,13 @@ args = { num_classes = 10 }
 ############################### Dataloaders
 # On source domian
 [dataloader_train]
-args = { batch_size = 128, num_workers = 2, shuffle = true, drop_last = true, pin_memory = true }
+args = { batch_size = 128, num_workers = 2, shuffle = true, drop_last = false, pin_memory = true }
 [dataloader_train.dataset]
 name = "MNIST_MDataset"
 args = { train = true }
 
 [dataloader_test]
-args = { batch_size = 128, num_workers = 2, shuffle = false, drop_last = true, pin_memory = true }
+args = { batch_size = 128, num_workers = 2, shuffle = false, drop_last = false, pin_memory = true }
 [dataloader_test.dataset]
 name = "MNIST_MDataset"
 args = { train = false }

@@ -267,3 +267,9 @@ class _Trainer_Base(ABC):
         else:
             path = str(self.model_path / f'checkpoint-epoch{epoch}.pth')
             torch.save(state, path)
+    
+    @staticmethod
+    def _adapt_epoch_to_step(params: dict, train_steps: int = None):
+        if params.get('epoch_size', False):  # get epoch_size rather than step_size
+            params['step_size'] = params['epoch_size'] * train_steps
+            params.pop('epoch_size')
