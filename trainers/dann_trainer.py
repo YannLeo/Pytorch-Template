@@ -55,7 +55,7 @@ class DANNTrainer(_Trainer_Base):
     def __init__(self, info: dict, resume=None, path=Path(), device=torch.device('cuda')):
         # Dataloaders, models, optimizers and loggers are prepared in super().__init__()
         super().__init__(info, resume, path, device)
-        
+
         self.loss_func = nn.CrossEntropyLoss()
         self.grl = _GradientReverseLayer(coeff=info['GRL_coeff'])
 
@@ -145,9 +145,8 @@ class DANNTrainer(_Trainer_Base):
         self.model.train()
         self.classifier_content.train()
         self.classifier_domain.train()
-        loop = tqdm.tqdm(enumerate(zip(self.dataloader_source, self.dataloader_target)),
-                         total=self.num_batches_train, leave=False,
-                         desc=f"Epoch {epoch}/{self.max_epoch}")
+        loop = tqdm.tqdm(enumerate(zip(self.dataloader_source, self.dataloader_target)), total=self.num_batches_train,
+                         leave=False, colour='#c95863', desc=f"Epoch {epoch}/{self.max_epoch}")
         for batch, ((data_s, label_s), (data_t, _)) in loop:  # we do not use label_t here
             data_s, data_t, label_s = data_s.to(self.device), data_t.to(self.device), label_s.to(self.device)
 
@@ -188,7 +187,7 @@ class DANNTrainer(_Trainer_Base):
             train_loss_content_src += loss_content_src.item()
 
             # Display at the end of the progress bar
-            if batch % (__interval := 1 if self.num_batches_train > 10 else self.num_batches_train // 10) == 0:
+            if batch % (__interval := 1 if self.num_batches_train < 10 else self.num_batches_train // 10) == 0:
                 loop.set_postfix(loss_step=f"{loss_content_src.item():.3f}", refresh=False)
 
         return {
