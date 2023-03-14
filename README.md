@@ -111,13 +111,13 @@ python main.py -c configs/mnist.toml
 
 - 在含有 `__init__.py` 的文件夹中建立新文件或模块时, 需要在 `__init__.py` 中 `import` 一下该模块, 否则会找不到
 
-- 文件下不动可以使用 [fastgithub](https://github.com/dotnetcore/fastgithub), 或用此链接: [蓝奏云](https://wwhy.lanzoum.com/i5yKC0l0ve9g)
+- 文件下不动可以使用 [fastgithub](https://github.com/dotnetcore/fastgithub), 或用此链接: [蓝奏云](https://wwhy.lanzoum.com/iFZh30q1eced)
 
 ## TODO List
 
 - [x] 基本结构
 - [x] `tqdm` 集成 
-- [ ] 提供 [Domain-Adversarial Training of Neural Networks, DANN](https://arxiv.org/abs/1505.07818) 示例
+- [x] 提供 [Domain-Adversarial Training of Neural Networks, DANN](https://arxiv.org/abs/1505.07818) 示例
 - [ ] 仿照 `keras` 提供 `train_step` & `test_step` 接口
 - [ ] 半精度 FP-16 支持
 - [ ] 完善的注释与双语 README
