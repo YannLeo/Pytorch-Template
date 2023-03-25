@@ -5,7 +5,7 @@ from torchvision import transforms
 
 
 class MNIST_MDataset(Dataset):
-    def __init__(self, path="/home/rxy/Datasets/MNIST-M/mnist_m_data.pkl", train=True):
+    def __init__(self, path="/home/public/Datasets/MNIST-M/mnist_m_data.pkl", train=True):
         super().__init__()
         with open(path, "rb") as f:
             data_dict = pkl.load(f)

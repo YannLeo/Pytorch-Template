@@ -23,7 +23,7 @@ plot_confusion = false
 ############################### Neural Networks
 # The base model
 [model]
-name = 'SimpleCNN2D'  # MNISTEncoder, out_dim
+name = 'SimpleCNN2D'        # MNISTEncoder, out_dim
 args = { num_classes = 64 } # dim of the output feature vector
 
 ############################### Dataloaders
@@ -62,4 +62,5 @@ args = { step_size = 2500, gamma = 0.6 }
 [lr_scheduler_C]
 name = "StepLR"
 init_lr = 0.0003
-args = { step_size = 2500, gamma = 0.6 }
+# args = { step_size = 2500, gamma = 0.6 }
+args = { epoch_size = 15.67, gamma = 0.6 } # epoch_size can be converted to step_size

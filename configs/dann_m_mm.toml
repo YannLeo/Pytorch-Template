@@ -28,26 +28,26 @@ args = { num_classes = 64 } # dim of the output feature vector
 ############################### Dataloaders
 # On source domian
 [dataloader_source] # train
-args = { batch_size = 128, num_workers = 2, shuffle = true, drop_last = false, pin_memory = true }
+args = { batch_size = 128, num_workers = 2, shuffle = true, drop_last = true, pin_memory = true }
 [dataloader_source.dataset]
 name = "MNISTDataset"
 args = { channels = 3, train = true }
 
 [dataloader_val] # test on src
-args = { batch_size = 128, num_workers = 2, shuffle = false, drop_last = false, pin_memory = true }
+args = { batch_size = 128, num_workers = 2, shuffle = false, drop_last = true, pin_memory = true }
 [dataloader_val.dataset]
 name = "MNISTDataset"
 args = { channels = 3, train = false }
 
 # On target domain
 [dataloader_target] # train
-args = { batch_size = 128, num_workers = 2, shuffle = true, drop_last = false, pin_memory = true }
+args = { batch_size = 128, num_workers = 2, shuffle = true, drop_last = true, pin_memory = true }
 [dataloader_target.dataset]
 name = "MNIST_MDataset"
 args = { train = true }
 
 [dataloader_test] # test on tgt
-args = { batch_size = 128, num_workers = 2, shuffle = false, drop_last = false, pin_memory = true }
+args = { batch_size = 128, num_workers = 2, shuffle = false, drop_last = true, pin_memory = true }
 [dataloader_test.dataset]
 name = "MNIST_MDataset"
 args = { train = false }
@@ -56,4 +56,5 @@ args = { train = false }
 [lr_scheduler]
 name = "StepLR"
 init_lr = 0.001
-args = { step_size = 2500, gamma = 0.6 }
+# args = { step_size = 2500, gamma = 0.6 }
+args = { epoch_size = 12.34, gamma = 0.6 } # epoch_size can be converted to step_size

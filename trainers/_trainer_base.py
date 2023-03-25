@@ -14,7 +14,7 @@ from sklearn.metrics import confusion_matrix
 from matplotlib import pyplot as plt
 from torch.utils import tensorboard
 import time
-
+import rich.progress
 
 # Used to print the log in different colors: r, g, b, w, c, m, y, k
 _color_map = {
@@ -100,7 +100,7 @@ class _Trainer_Base(ABC):
         if self.resume:
             checkpoint = torch.load(self.resume)
             state_dict = checkpoint['state_dict']
-            model.load_state_dict(state_dict['model'])
+            model.load_state_dict(state_dict)
             self.epoch = checkpoint['epoch'] + 1
         else:
             self.epoch = 0
@@ -148,13 +148,15 @@ class _Trainer_Base(ABC):
 
             '''1. Training epoch'''
             metrics_train = self.train_epoch(epoch)
-            print(f'Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}', end='')
-            print('testing...' + '\b' * len('testing...'), end='', flush=True)
+            print(f'Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}Testing...')
 
+            # time.sleep(1)
             '''2. Testing epoch'''
             metrics_test = self.test_epoch(epoch)
             time_end = time.time()
-            print(f'{self.metrics_wrapper(metrics_test, with_color=True)}time:{int(time_end - time_begin):3d}s', end='')
+            print('\x1b\x4d'*2)  # move cursor up
+            print(f'Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}', end='')
+            print(f'{self.metrics_wrapper(metrics_test, with_color=True)}time:{int(time_end - time_begin):3d}s', end='', flush=True)
 
             '''3. Logging results'''
             best = self._save_model_by_test_loss(epoch, metrics_test["test_loss"])  # need to be specified by yourself
@@ -267,9 +269,36 @@ class _Trainer_Base(ABC):
         else:
             path = str(self.model_path / f'checkpoint-epoch{epoch}.pth')
             torch.save(state, path)
-    
+
     @staticmethod
     def _adapt_epoch_to_step(params: dict, train_steps: int = None):
         if params.get('epoch_size', False):  # get epoch_size rather than step_size
-            params['step_size'] = params['epoch_size'] * train_steps
+            params['step_size'] = int(params['epoch_size'] * train_steps)
             params.pop('epoch_size')
+
+    def progress(self, dataloader, epoch, test=False, total=None):
+        _progress = rich.progress.Progress(
+            rich.progress.TextColumn("[progress.percentage]{task.description}"),
+            rich.progress.SpinnerColumn("dots" if test else "moon", "progress.percentage", finished_text="[green]✔"),
+            rich.progress.BarColumn(),
+            rich.progress.TextColumn("[progress.download]{task.percentage:>5.1f}%"),
+            rich.progress.MofNCompleteColumn(),
+            # TaskProgressColumn("[progress.percentage]{task.completed:>3d}/{task.total:<3d}"),
+            "•[progress.remaining] ⏳",
+            rich.progress.TimeRemainingColumn(),
+            "•[progress.elapsed] ⏰",
+            rich.progress.TimeElapsedColumn(),
+            transient=True,
+        )
+        if total is None:
+            try:
+                total = len(dataloader)
+            except TypeError:
+                total = self.num_batches_test if test else self.num_batches_train
+
+        with _progress:
+            description = "Testing" if test else f"Epoch {epoch+1}/{self.max_epoch}"
+            yield from _progress.track(
+                dataloader, total=total, description=description, update_period=0.1
+            )
+            _progress.update(0, description=f"[green]Epoch {epoch+1:<2d}")

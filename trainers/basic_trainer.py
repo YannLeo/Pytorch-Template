@@ -9,7 +9,6 @@ import torch
 from torch import nn
 import numpy as np
 from pathlib import Path
-import tqdm  
 from ._trainer_base import _Trainer_Base
 import models
 import datasets
@@ -52,6 +51,8 @@ class BasicTrainer(_Trainer_Base):
         """
         Prepare optimizers and corresponding learning rate schedulers.
         """
+        # convert epoch_size to step_size like below:
+        self._adapt_epoch_to_step(info['lr_scheduler']['args'], self.num_batches_train)
         self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
         self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
                                               {'optimizer': self.opt, **info['lr_scheduler']['args']})  
@@ -76,9 +77,7 @@ class BasicTrainer(_Trainer_Base):
         train_loss = 0. 
 
         self.model.train()  # don't forget
-        loop = tqdm.tqdm(enumerate(self.dataloader_train), total=self.num_batches_train, leave=False, colour='#c95863', 
-                         desc=f"Epoch {epoch}/{self.max_epoch}")
-        for batch, (data, targets) in loop:
+        for batch, (data, targets) in self.progress(enumerate(self.dataloader_train), epoch=epoch):
             data, targets = data.to(self.device), targets.to(self.device) 
 
             # 1. Forwarding
@@ -97,10 +96,6 @@ class BasicTrainer(_Trainer_Base):
             num_samples += data.shape[0]
             train_loss += loss.item()
             num_correct += torch.sum(output.argmax(dim=1) == targets).item()
-            
-            # Display at the end of the progress bar
-            if batch % (__interval:=1 if self.num_batches_train < 10 else self.num_batches_train // 10) == 0:
-                loop.set_postfix(loss_step=f"{loss.item():.3f}", refresh=False)
 
         return {
             "train_loss": train_loss / self.num_batches_train,
@@ -114,10 +109,9 @@ class BasicTrainer(_Trainer_Base):
         
         self.model.eval()  # don't forget
         with torch.no_grad():
-            for data, targets in self.dataloader_test:
+            for data, targets in self.progress(self.dataloader_test, epoch=epoch, test=True):
                 if self.plot_confusion:
-                    self._y_true.append(targets.numpy())
-                    
+                    self._y_true.append(targets.numpy()) 
                 data, targets = data.to(self.device), targets.to(self.device)
                 # Forwarding
                 output = self.model(data)

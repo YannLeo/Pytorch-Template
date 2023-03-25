@@ -43,4 +43,5 @@ args = { train = false }
 [lr_scheduler]
 name = "StepLR"
 init_lr = 0.001
-args = { step_size = 800, gamma = 0.6 }
+# args = { step_size = 800, gamma = 0.6 }
+args = { epoch_size = 5.5, gamma = 0.6 } # epoch_size can be converted to step_size

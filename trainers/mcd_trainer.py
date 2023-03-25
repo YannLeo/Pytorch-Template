@@ -117,8 +117,7 @@ class MCDTrainer(_Trainer_Base):
         self.model.train()
         self.C1.train()
         self.C2.train()
-        loop = tqdm.tqdm(enumerate(zip(self.dataloader_source, self.dataloader_target)), total=self.num_batches_train, 
-                         leave=False, colour='#c95863', desc=f"Epoch {epoch}/{self.max_epoch}")
+        loop = self.progress(enumerate(zip(self.dataloader_source, self.dataloader_target)), epoch=epoch)
         for batch, ((data_s, label_s), (data_t, label_t)) in loop:  # label_t is merely for metrics
             data_s, data_t = data_s.to(self.device), data_t.to(self.device)
             label_s, label_t = label_s.to(self.device), label_t.to(self.device)
@@ -177,12 +176,6 @@ class MCDTrainer(_Trainer_Base):
             self.lr_scheduler_C1.step()
             self.lr_scheduler_C2.step()
 
-            # Display at the end of the progress bar
-            if batch % (__interval := 1 if self.num_batches_train < 10 else self.num_batches_train // 10) == 0:
-                loop.set_postfix(losses=f"{loss_s1.item():.3f} "
-                                        f"{loss_s2.item():.3f} "
-                                        f"{loss_dis.item():.3f}", refresh=False)
-
         return {
             "train_loss_C1": train_loss_C1 / self.num_batches_train,
             "train_loss_C2": train_loss_C2 / self.num_batches_train,
@@ -203,7 +196,7 @@ class MCDTrainer(_Trainer_Base):
         self.C1.eval()
         self.C2.eval()
         with torch.no_grad():
-            for data, targets in self.dataloader_test:
+            for data, targets in self.progress(self.dataloader_test, epoch=epoch, test=True):
                 if self.plot_confusion:
                     self._y_true.append(targets.numpy())
 

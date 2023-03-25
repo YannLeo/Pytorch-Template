@@ -2,7 +2,7 @@ from torchvision import datasets, transforms
 import torch
 
 
-def MNISTDataset(path='/home/rxy/Datasets', size=28, channels=3, train=True):
+def MNISTDataset(path='/home/public/Datasets', size=28, channels=3, train=True):
     transform = transforms.Compose([
         transforms.Resize(size),
         transforms.ToTensor(),  # automatically normalize to [0, 1]
@@ -17,12 +17,12 @@ def MNISTDataset(path='/home/rxy/Datasets', size=28, channels=3, train=True):
 if __name__ == '__main__':
 
     train_loader = torch.utils.data.DataLoader(
-        MNISTDataset('/home/rxy/Datasets', channels=3, train=True), batch_size=32, shuffle=True)
+        MNISTDataset('/home/public/Datasets', channels=3, train=True), batch_size=32, shuffle=True)
 
     test_loader = torch.utils.data.DataLoader(
-        MNISTDataset('/home/rxy/Datasets', channels=3, train=False), batch_size=32, shuffle=False)
+        MNISTDataset('/home/public/Datasets', channels=3, train=False), batch_size=32, shuffle=False)
 
     for x, y in test_loader:
         print(x.shape, y.shape)
-        print(x[0][2] == MNISTDataset('/home/rxy/Datasets', train=False)[0][0])
+        print(x[0][2] == MNISTDataset('/home/public/Datasets', train=False)[0][0])
         break

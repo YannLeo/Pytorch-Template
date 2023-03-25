@@ -10,7 +10,6 @@ import torch
 from torch import nn
 import numpy as np
 from pathlib import Path
-import tqdm
 from ._trainer_base import _Trainer_Base
 import models
 import datasets
@@ -108,6 +107,8 @@ class DANNTrainer(_Trainer_Base):
         """
         Prepare the optimizers and corresponding learning rate schedulers.
         """
+        # convert epoch_size to step_size like below:
+        self._adapt_epoch_to_step(info['lr_scheduler']['args'], self.num_batches_train)
         self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
         self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
                                              {'optimizer': self.opt, **info['lr_scheduler']['args']})
@@ -145,8 +146,7 @@ class DANNTrainer(_Trainer_Base):
         self.model.train()
         self.classifier_content.train()
         self.classifier_domain.train()
-        loop = tqdm.tqdm(enumerate(zip(self.dataloader_source, self.dataloader_target)), total=self.num_batches_train,
-                         leave=False, colour='#c95863', desc=f"Epoch {epoch}/{self.max_epoch}")
+        loop = self.progress(enumerate(zip(self.dataloader_source, self.dataloader_target)), epoch=epoch)
         for batch, ((data_s, label_s), (data_t, _)) in loop:  # we do not use label_t here
             data_s, data_t, label_s = data_s.to(self.device), data_t.to(self.device), label_s.to(self.device)
 
@@ -186,10 +186,6 @@ class DANNTrainer(_Trainer_Base):
                 (output_domain_tgt.argmax(dim=1) == label_zeros).sum().item()
             train_loss_content_src += loss_content_src.item()
 
-            # Display at the end of the progress bar
-            if batch % (__interval := 1 if self.num_batches_train < 10 else self.num_batches_train // 10) == 0:
-                loop.set_postfix(loss_step=f"{loss_content_src.item():.3f}", refresh=False)
-
         return {
             "train_loss": train_loss_content_src / self.num_batches_train,  # content losss of src domain
             "train_acc": (num_correct_content / num_samples, 'red'),  # acc of content classifier on src domain
@@ -208,7 +204,7 @@ class DANNTrainer(_Trainer_Base):
         self.classifier_content.eval()
         self.classifier_domain.eval()
         with torch.no_grad():
-            for data, targets in self.dataloader_test:
+            for data, targets in self.progress(self.dataloader_test, epoch=epoch, test=True):
                 if self.plot_confusion:
                     self._y_true.append(targets.numpy())
 
