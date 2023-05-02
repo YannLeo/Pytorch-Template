@@ -10,8 +10,7 @@ import torch
 from torch import nn
 import numpy as np
 from pathlib import Path
-import tqdm
-from ._trainer_base import _Trainer_Base
+from ._trainer_base import _Trainer_Base, plot_confusion
 import models
 import datasets
 
@@ -81,6 +80,10 @@ class MCDTrainer(_Trainer_Base):
         """
         Prepare the optimizers and corresponding learning rate schedulers.
         """
+        # convert epoch_size to step_size like below:
+        self._adapt_epoch_to_step(info['lr_scheduler']['args'], self.num_batches_train)
+        self._adapt_epoch_to_step(info['lr_scheduler_C']['args'], self.num_batches_train)
+
         self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
         self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
                                              {'optimizer': self.opt, **info['lr_scheduler']['args']})
@@ -91,9 +94,9 @@ class MCDTrainer(_Trainer_Base):
         self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
                                              {'optimizer': self.opt, **info['lr_scheduler']['args']})
         self.lr_scheduler_C1 = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler_C']['name'],
-                                                {'optimizer': self.opt_C1, **info['lr_scheduler']['args']})
+                                                {'optimizer': self.opt_C1, **info['lr_scheduler_C']['args']})
         self.lr_scheduler_C2 = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler_C']['name'],
-                                                {'optimizer': self.opt_C2, **info['lr_scheduler']['args']})
+                                                {'optimizer': self.opt_C2, **info['lr_scheduler_C']['args']})
 
     def _reset_grad(self):
         """
@@ -185,10 +188,10 @@ class MCDTrainer(_Trainer_Base):
             "acc_tgt": (num_correct_tgt / num_samples, 'green')
         }
 
+    @plot_confusion(name="test", interval=2)  # "test.png"
     def test_epoch(self, epoch):
         """Only relates to the test set of target domain."""
         # Helper variables
-        self._y_pred, self._y_true = [], []  # to plot confusion matrix of test dataset
         num_correct, num_correct_C1, num_correct_C2, num_samples = 0, 0, 0, 0
         test_loss = 0.
 
@@ -197,7 +200,7 @@ class MCDTrainer(_Trainer_Base):
         self.C2.eval()
         with torch.no_grad():
             for data, targets in self.progress(self.dataloader_test, epoch=epoch, test=True):
-                if self.plot_confusion:
+                if self.plot_confusion_flag:
                     self._y_true.append(targets.numpy())
 
                 data, targets = data.to(self.device), targets.to(self.device)
@@ -215,7 +218,7 @@ class MCDTrainer(_Trainer_Base):
                 num_correct_C1 += torch.sum(torch.argmax(output1, dim=1) == targets).item()
                 num_correct_C2 += torch.sum(torch.argmax(output2, dim=1) == targets).item()
 
-                if self.plot_confusion:
+                if self.plot_confusion_flag:
                     self._y_pred.append(predicts.cpu().numpy())
 
         return {

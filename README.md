@@ -57,14 +57,17 @@ Hi~ 这是一个 `Pytorch` 的训练模板, 总体使用原则是: 根据指定�
   3. _prepare_opt, 定义模型对应的优化器与学习率策略;
   4. _reset_grad, 为方便, 把若干个优化器的清空梯度包装于此.
   
-  接下来就需要完成真正的核心部分: 训练逻辑 `train_epoch()` 与测试逻辑 `test_epoch()`. 它们迭代完整个 epoch 后应该返回由指标 (metrics) 构成的字典, 此处亦可在 value 处返回一个 `(值, 颜色字符串)` 元组, 使得在 console 中把这个指标变彩色. 具体颜色的定义在 `_Trainer_Base` 的开头. `test_epoch()` 中还可以把测试结果保存到 `self._y_pred, self._y_true` 中, 用以画混淆矩阵图 (需要在 `toml` 中设置 `plot_confusion` 为 `true`).
+  接下来就需要完成真正的核心部分: 训练逻辑 `train_epoch()` 与测试逻辑 `test_epoch()`. 它们迭代完整个 epoch 后应该返回由指标 (metrics) 构成的字典, 此处亦可在 value 处返回一个 `(值, 颜色字符串)` 元组, 使得在 console 中把这个指标变彩色. 具体颜色的定义在 `_Trainer_Base` 的开头. 
+  
+  如果需要画混淆矩阵, 可以用 `plot_confusion` 包装某一个 step 比如 `test_epoch()`, 其内还需要把真实标签与预测结果保存到公共变量 `self._y_true, self._y_pred` 中, 用以画混淆矩阵图 (还需要在 `toml` 中设置 `plot_confusion` 为 `true`, 以便不修改代码却能直接禁止画图). 装饰器 `plot_confusion` 会自动解析这两个公共变量去画混淆矩阵. 
 
   修改写入日志的行为或按 epoch 修改学习率则需要覆盖父类的 `train()` 方法.
 
   接下来还有些辅助函数可以使用: 
   
-  1. _epoch_end, 一个 epoch 的训练与测试结束后的行为, 子类覆盖时别忘了在方法末尾调用 `super().__epoch_end()`, 因为有画混淆矩阵的操作;
-  2. _train_end, 全部流程结束后的行为, 子类覆盖时别忘了在方法末尾调用 `super().__train_end()`, 因为要关闭 tensorboard 句柄, 否则最后一个记录点很可能无法被写入.
+  1. _epoch_end, 一个 epoch 的训练与测试结束后的行为, 暂时为空.
+  2. _train_end, 全部流程结束后的行为, 子类覆盖时别忘了在方法末尾调用 `super()._train_end()`, 因为要关闭 tensorboard 句柄, 否则最后一个记录点很可能无法被写入.
+  3. plot_confusion, 一个装饰器, 用于方便地画混淆矩阵, 用法见代码和前面的描述.
 
 - utils (文件夹)
 
@@ -109,7 +112,7 @@ python main.py -c configs/mnist.toml
 
 ## 5. Notes
 
-- 如果机器性能较差, 请将 `toml` 配置中传给 `dataloader` 的 `pin_memory` 设为 `false`, 并调小 `num_workers`
+- 如果机器性能较差, 请将 `toml` 配置中传给 `dataloader` 的 `pin_memory` 设为 `false`, 并调小 `num_workers` 甚至为 0
 
 - 在含有 `__init__.py` 的文件夹中建立新文件或模块时, 需要在 `__init__.py` 中 `import` 一下该模块, 否则会找不到
 
@@ -121,7 +124,5 @@ python main.py -c configs/mnist.toml
 - [x] `tqdm` 集成 
 - [x] 提供 [Domain-Adversarial Training of Neural Networks, DANN](https://arxiv.org/abs/1505.07818) 等等示例
 - [x] 用 `rich` 替换 `tqdm`
-- [ ] 仿照 `keras` 提供 `train_step` & `test_step` 接口
 - [ ] 半精度 FP-16 支持
 - [ ] 完善的注释与双语 README
-

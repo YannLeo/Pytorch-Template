@@ -10,7 +10,7 @@ import torch
 from torch import nn
 import numpy as np
 from pathlib import Path
-from ._trainer_base import _Trainer_Base
+from ._trainer_base import _Trainer_Base, plot_confusion
 import models
 import datasets
 
@@ -192,20 +192,20 @@ class DANNTrainer(_Trainer_Base):
             "train_acc_domain": num_correct_domain / num_samples / 2,
         }
 
+    @plot_confusion(name="test")  # "test.png"
     def test_epoch(self, epoch):
         """Only relates to the test set of target domain."""
         # Helper variables
-        self._y_pred, self._y_true = [], []  # to plot confusion matrix of test dataset
         num_correct_domain, num_correct_content, num_samples = 0, 0, 0
         test_loss_content = 0.
-        label_zeros = torch.zeros(self.batch_size).long().to(self.device)  # tgt domain
+        label_zeros = torch.zeros(self.dataloader_test.batch_size).long().to(self.device)  # tgt domain
 
         self.model.eval()
         self.classifier_content.eval()
         self.classifier_domain.eval()
         with torch.no_grad():
             for data, targets in self.progress(self.dataloader_test, epoch=epoch, test=True):
-                if self.plot_confusion:
+                if self.plot_confusion_flag:
                     self._y_true.append(targets.numpy())
 
                 data, targets = data.to(self.device), targets.to(self.device)
@@ -220,7 +220,7 @@ class DANNTrainer(_Trainer_Base):
                 num_correct_content += torch.sum(predicts == targets).item()
                 num_correct_domain += torch.sum(torch.argmax(output_domain, dim=1) == label_zeros).item()
 
-                if self.plot_confusion:
+                if self.plot_confusion_flag:
                     self._y_pred.append(predicts.cpu().numpy())
 
         return {

@@ -9,7 +9,7 @@ import torch
 from torch import nn
 import numpy as np
 from pathlib import Path
-from ._trainer_base import _Trainer_Base
+from ._trainer_base import _Trainer_Base, plot_confusion
 import models
 import datasets
 
@@ -68,6 +68,7 @@ class BasicTrainer(_Trainer_Base):
         pass
     '''
     
+    @plot_confusion(name="train", interval=2)  # "train.png"
     def train_epoch(self, epoch):  # sourcery skip: low-code-quality
         """
         The main training process
@@ -78,6 +79,8 @@ class BasicTrainer(_Trainer_Base):
 
         self.model.train()  # don't forget
         for batch, (data, targets) in self.progress(enumerate(self.dataloader_train), epoch=epoch):
+            if self.plot_confusion_flag:
+                self._y_true.append(targets.numpy()) 
             data, targets = data.to(self.device), targets.to(self.device) 
 
             # 1. Forwarding
@@ -95,22 +98,26 @@ class BasicTrainer(_Trainer_Base):
             # 5. Computing metrics
             num_samples += data.shape[0]
             train_loss += loss.item()
-            num_correct += torch.sum(output.argmax(dim=1) == targets).item()
+            predicts = output.argmax(dim=1)
+            num_correct += torch.sum(predicts == targets).item()
+            
+            if self.plot_confusion_flag:
+                self._y_pred.append(predicts.cpu().numpy())            
 
         return {
             "train_loss": train_loss / self.num_batches_train,
             "train_acc": (num_correct / num_samples, 'blue'),  # (value, color) is supported
         }
 
-    def test_epoch(self, epoch):
-        self._y_pred, self._y_true = [], []  
+    @plot_confusion(name="test")  # "test.png"
+    def test_epoch(self, epoch): 
         num_correct, num_samples = 0, 0
         test_loss = 0.
         
         self.model.eval()  # don't forget
         with torch.no_grad():
             for data, targets in self.progress(self.dataloader_test, epoch=epoch, test=True):
-                if self.plot_confusion:
+                if self.plot_confusion_flag:
                     self._y_true.append(targets.numpy()) 
                 data, targets = data.to(self.device), targets.to(self.device)
                 # Forwarding
@@ -121,7 +128,7 @@ class BasicTrainer(_Trainer_Base):
                 predicts = output.argmax(dim=1)
                 num_correct += torch.sum(predicts == targets).item()
                 
-                if self.plot_confusion:
+                if self.plot_confusion_flag:
                     self._y_pred.append(predicts.cpu().numpy())
                     
         return {

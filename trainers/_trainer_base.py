@@ -72,7 +72,7 @@ class _Trainer_Base(ABC):
         self.save_period = info['save_period']
         self.min_valid_loss = np.inf
         self.min_valid_pretrain_loss = np.inf
-        self.plot_confusion = self.info.get('plot_confusion', False)
+        self.plot_confusion_flag = self.info.get('plot_confusion', False)
 
         self.model = None  # must be defined in `self.__prepare_models()`
         self._y_true, self._y_pred = None, None  # temp variables for confusion matrix
@@ -172,14 +172,7 @@ class _Trainer_Base(ABC):
         self._train_end()  # Must be called at the end of the training
 
     def _epoch_end(self, epoch):
-        """If this function is overrided, please call super()._epoch_end() at the end of the function."""
-        if self.plot_confusion and epoch % 2 == 0 and self._y_pred and self._y_true:
-            if isinstance(self._y_pred, list) or isinstance(self._y_true, list):
-                self._y_pred = np.concatenate(self._y_pred, axis=0)
-                self._y_true = np.concatenate(self._y_true, axis=0)
-            self._plot_confusion_matrix(
-                photo_path=self.confusion_path / f'test-{str(epoch).zfill(len(str(self.max_epoch)))}.png',
-                labels=self._y_true, predicts=self._y_pred, classes=list(range(self.num_classes)))
+        pass
 
     def _train_end(self):
         """If this function is overrided, please call super()._train_end() at the end of the function."""
@@ -194,8 +187,8 @@ class _Trainer_Base(ABC):
         pass
 
     @staticmethod
-    def _plot_confusion_matrix(photo_path, labels, predicts, classes, normalize=True, title='Confusion Matrix',
-                               cmap=plt.cm.Oranges):
+    def _plot_confusion_matrix_impl(photo_path, labels, predicts, classes, normalize=True, title='Confusion Matrix',
+                                    cmap=plt.cm.Oranges):
         FONT_SIZE = 13
         cm = confusion_matrix(labels, predicts, labels=list(range(len(classes))))
         if normalize:
@@ -302,3 +295,27 @@ class _Trainer_Base(ABC):
                 dataloader, total=total, description=description, update_period=0.1
             )
             _progress.update(0, description=f"[green]Epoch {epoch+1:<2d}")
+
+
+# a decorator to plot confusion matrix easily
+def plot_confusion(name='test', interval=1):
+    def decorator(func_to_plot_confusion):
+        # wrapper to the actual function, e.g. self.test_epoch(self, epoch, *args, **kwargs)
+        def wrapper(self, epoch, *args, **kwargs):
+            # 1. before the func: empty the public list
+            self._y_pred, self._y_true = [], []
+            # 2. call the func
+            metrics = func_to_plot_confusion(self, epoch, *args, **kwargs)
+            # 3. after the func: check and plot the confusion matrix
+            if epoch % interval == 0 and (len(self._y_pred) + len(self._y_true)) > 0:
+                if isinstance(self._y_pred, list) or isinstance(self._y_true, list):
+                    self._y_pred = np.concatenate(self._y_pred, axis=0)
+                    self._y_true = np.concatenate(self._y_true, axis=0)
+                self._plot_confusion_matrix_impl(
+                    photo_path=self.confusion_path / f'{name}-{str(epoch).zfill(len(str(self.max_epoch)))}.png',
+                    labels=self._y_true, predicts=self._y_pred, classes=list(range(self.num_classes)))
+            return metrics
+
+        return wrapper
+
+    return decorator
