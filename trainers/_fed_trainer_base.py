@@ -110,11 +110,11 @@ class _Fed_Trainer_Base(ABC):
                 if isinstance(value, (tuple, list)):
                     if value[-1] in _color_map:
                         if isinstance(value[0], (tuple, list)):
-                            result.append(f"{_color_map[value[-1]][0]}{key}: {value[0]}{_color_map[value[-1]][1]} | ")
+                            result.append(f"{_color_map[value[-1]][0]}{key}: [" + ", ".join([f'{i:.4f}' for i in value[0]]) + f"]{_color_map[value[-1]][1]} | ")
                         else:
                             result.append(f"{_color_map[value[-1]][0]}{key}: {value[0]:.4f}{_color_map[value[-1]][1]} | ")
                     else:
-                        result.append(f"{key}: {value[0]} | ")
+                        result.append(f"{key}: [" + ", ".join([f'{i:.4f}' for i in value[0]]) + "] | ")
                 else:
                     result.append(f"{key}: {value:.4f} | ")
         else:
@@ -122,11 +122,11 @@ class _Fed_Trainer_Base(ABC):
                 if isinstance(value, (tuple, list)):
                     if value[-1] in _color_map:
                         if isinstance(value[0], (tuple, list)):
-                            result.append(f"{key}: {value[0]} | ")
+                            result.append(f"{key}: [" + ", ".join([f'{i:.4f}' for i in value[0]]) + "] | ")
                         else:
                             result.append(f"{key}: {value[0]:.4f} | ")
                     else:
-                        result.append(f"{key}: {value[0]} | ")
+                        result.append(f"{key}: [" + ", ".join([f'{i:.4f}' for i in value[0]]) + "] | ")
                 else:
                     result.append(f"{key}: {value:.4f} | ")
         return "".join(result)

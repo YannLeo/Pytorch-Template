@@ -227,6 +227,6 @@ class FedAvgTrainer(_Fed_Trainer_Base):
             return {
                 "test_loss": test_loss,
                 "test_acc": (num_correct / num_samples, 'red'),
-                "test_acc_clients": (np.round([m['num_correct'] / m['num_samples'] for m in metrics_test_client], 4).tolist(), 'cyan')
+                "test_acc_clients": ([m['num_correct'] / m['num_samples'] for m in metrics_test_client], 'cyan')
             }
                 
