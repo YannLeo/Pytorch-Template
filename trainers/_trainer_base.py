@@ -12,7 +12,7 @@ import numpy as np
 from pathlib import Path
 from sklearn.metrics import confusion_matrix
 from matplotlib import pyplot as plt
-from torch.utils import tensorboard
+from torch.utils.tensorboard.writer import SummaryWriter
 import time
 import rich.progress
 
@@ -85,7 +85,7 @@ class _Trainer_Base(ABC):
         self._prepare_opt(info)
         # loggers
         self._get_logger()  # txt logger
-        self.metrics_writer = tensorboard.SummaryWriter(path / 'log')
+        self.metrics_writer = SummaryWriter(path / 'log')
 
     @abstractmethod
     def _prepare_dataloaders(self, info):

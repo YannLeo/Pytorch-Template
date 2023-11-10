@@ -76,7 +76,7 @@ Hi~ 这是一个 `Pytorch` 的训练模板, 总体使用原则是: 根据指定�
 
 ## 3. Requirements
 
-- Python $\ge$ 3.8
+- Python $\ge$ 3.9 (Type Hints)
 
 - pytorch
 
