@@ -9,53 +9,54 @@ import torch
 from torch import nn
 import numpy as np
 from pathlib import Path
-from ._trainer_base import _Trainer_Base, plot_confusion
+from ._trainer_base import _Trainer_Base, plot_confusion, metrics
 import models
 import datasets
 
 
 class BasicTrainer(_Trainer_Base):
-    def __init__(self, info: dict, resume=None, path=Path(), device=torch.device('cuda')):
+    def __init__(self, info: dict, path=Path(), device=torch.device('cuda')):
         # Dataloaders, models, optimizers and loggers are prepared in super().__init__()
-        super().__init__(info, resume, path, device)
+        super().__init__(info, path, device)
         self.loss_func = nn.CrossEntropyLoss(label_smoothing=info["label_smoothing"])
-        
-    def _prepare_dataloaders(self, info):
+    
+    
+    def _prepare_dataloaders(self):
         """
         Prepare dataloaders for training and testing.
         """
         # dataloaders!
-        self.dataset_train = self._get_object(datasets, info['dataloader_train']['dataset']['name'],
-                                               info['dataloader_train']['dataset']['args'])
+        self.dataset_train = self._get_object(datasets, self.info['dataloader_train']['dataset']['name'],
+                                               self.info['dataloader_train']['dataset']['args'])
         self.dataloader_train = torch.utils.data.DataLoader(dataset=self.dataset_train,
-                                                            **info['dataloader_train']['args'])
-        self.dataset_test = self._get_object(datasets, info['dataloader_test']['dataset']['name'],
-                                              info['dataloader_test']['dataset']['args'])
+                                                            **self.info['dataloader_train']['args'])
+        self.dataset_test = self._get_object(datasets, self.info['dataloader_test']['dataset']['name'],
+                                              self.info['dataloader_test']['dataset']['args'])
         self.dataloader_test = torch.utils.data.DataLoader(dataset=self.dataset_test,
-                                                           **info['dataloader_test']['args'])
+                                                           **self.info['dataloader_test']['args'])
         # helper constants
         self.batch_size = self.dataloader_train.batch_size
         self.num_batches_train = len(self.dataloader_train)
         self.num_batches_test = len(self.dataloader_test)
-        
-    def _prepare_models(self, info):
+    
+    def _prepare_models(self):
         """
         Prepare models for training.
         """
         # the name `self.model` is reserved for some functions in the base class
-        self.model = self._get_object(models, info['model']['name'], info['model']['args'])
+        self.model: nn.Module = self._get_object(models, self.info['model']['name'], self.info['model']['args'])
         self._resuming_model(self.model)  # Prepare for resuming models
         self.model = self.model.to(self.device)
     
-    def _prepare_opt(self, info):
+    def _prepare_opt(self):
         """
         Prepare optimizers and corresponding learning rate schedulers.
         """
         # convert epoch_size to step_size like below:
-        self._adapt_epoch_to_step(info['lr_scheduler']['args'], self.num_batches_train)
-        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
-        self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
-                                              {'optimizer': self.opt, **info['lr_scheduler']['args']})  
+        self._adapt_epoch_to_step(self.info['lr_scheduler']['args'], self.num_batches_train)
+        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=self.info['lr_scheduler']['init_lr'])
+        self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, self.info['lr_scheduler']['name'],
+                                              {'optimizer': self.opt, **self.info['lr_scheduler']['args']})  
     
     def _reset_grad(self):
         """
