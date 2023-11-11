@@ -363,8 +363,8 @@ class _Trainer_Base(ABC):
 
 
 # a decorator to plot confusion matrix easily
-def plot_confusion(name="test", interval=1) -> Callable[..., Callable[[int, DataLoader], dict[str, metrics]]]:
-    def decorator(func_to_plot_confusion):
+def plot_confusion(name="test", interval=1) -> Callable[..., Callable[..., dict[str, metrics]]]:
+    def decorator(func_to_plot_confusion: Callable[..., dict[str, metrics]]):
         # wrapper to the actual function, e.g. self.test_epoch(self, epoch, *args, **kwargs)
         def wrapper(self: _Trainer_Base, epoch, *args, **kwargs):
             # 1. before the func: empty the public list
