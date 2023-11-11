@@ -4,18 +4,22 @@
 # @File       : _trainer_base.py
 # @Note       : The base class of all trainers, and some tools for training
 
-from typing import NamedTuple
+from typing import NamedTuple, Iterator, Callable, Any
 from abc import ABC, abstractmethod
 import itertools
 import logging
+import time
 import torch
+from torch.utils.data import DataLoader
 import numpy as np
 from pathlib import Path
 from sklearn.metrics import confusion_matrix
 from matplotlib import pyplot as plt
 from torch.utils.tensorboard.writer import SummaryWriter
-import time
 import rich.progress
+
+import datasets
+import models
 
 
 # Used to print the log in different colors: r, g, b, w, c, m, y, k
@@ -68,19 +72,19 @@ class _Trainer_Base(ABC):
               schedulers are defined.
         """
         # Basic constants
-        self.info = info  # dict of configs from toml file
-        self.resume = info.get("resume")  # path to checkpoint
-        self.device = device
-        self.max_epoch = info["epochs"]
-        self.num_classes = info["num_classes"]
-        self.log_path = path / "log" / "log.txt"
-        self.model_path = path / "model"
-        self.confusion_path = path / "confusion_matrix"
-        self.save_period = info["save_period"]
-        self._min_valid_loss = np.inf
-        self._min_valid_pretrain_loss = np.inf
+        self.info: dict = info  # dict of configs from toml file
+        self.resume: str | None = info.get("resume")  # path to checkpoint
+        self.device: torch.device = device
+        self.max_epoch: int = info["epochs"]
+        self.num_classes: int = info["num_classes"]
+        self.log_path: Path = path / "log" / "log.txt"
+        self.model_path: Path = path / "model"
+        self.confusion_path: Path = path / "confusion_matrix"
+        self.save_period: int = info["save_period"]
+        self._min_valid_loss: float = np.inf
+        self._min_valid_pretrain_loss: float = np.inf
 
-        self.model: torch.nn.Module | None = None  # must be defined in `self.__prepare_models()`
+        self.model: torch.nn.Module  # must be defined in `self._prepare_models()`
 
         # temp variables for confusion matrix
         self._y_true: list = []
@@ -88,37 +92,113 @@ class _Trainer_Base(ABC):
 
         # 1. Dataloaders
         self._prepare_dataloaders()
+        self._adapt_epoch_to_step()
         # 2. Defination and initialization of the models
         self._prepare_models()
         # 3. Optimizers and schedulers of the models
         self._prepare_opt()
         # loggers
         self._get_logger()  # txt logger
-        self.metrics_writer = SummaryWriter(path / "log")
+        self.metrics_writer: SummaryWriter = SummaryWriter(path / "log")
 
     def _prepare_dataloaders(self):
-        ...
+        """
+        1. Prepare dataloaders for training (single) and testing (multiple).
+        """
+        train_loader_config = self.info["dataloader_train"]  # single dataloader for training
+        # Load training dataloader
+        self.dataset_train = self._get_object(datasets, train_loader_config["dataset"]["name"], train_loader_config["dataset"]["args"])
+        self.dataloader_train = DataLoader(dataset=self.dataset_train, **train_loader_config["args"])
+        # Load testing dataloaders as a dict, sorted by name
+        test_loaders = filter(lambda x: "dataloader_test" in x, self.info)  # multiple dataloaders for testing
+        dataset_test_dict = {
+            test_loader_name: self._get_object(
+                datasets, self.info[test_loader_name]["dataset"]["name"], self.info[test_loader_name]["dataset"]["args"]
+            )
+            for test_loader_name in test_loaders
+        }
+        self.dataloader_test_dict = {
+            test_loader_name: DataLoader(dataset=dataset_test_dict[test_loader_name], **self.info[test_loader_name]["args"])
+            for test_loader_name in test_loaders
+        }
 
-    @abstractmethod
     def _prepare_models(self):
-        pass
+        """
+        2. Prepare models for training. The name `self.model` is reserved for some functions in the base class
+        """
+        self.model: torch.nn.Module = self._get_object(models, self.info["model"]["name"], self.info["model"]["args"])
+        self._resuming_model(self.model)  # Prepare for resuming models, will not resume optimizers and schedulers!!
+        self.model = self.model.to(self.device)
+
+    def _prepare_opt(self):
+        """
+        3. Prepare optimizers and corresponding learning rate schedulers.
+        """
+        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=self.info["lr_scheduler"]["init_lr"])
+        self.lr_scheduler: torch.optim.lr_scheduler.LRScheduler = self._get_object(
+            torch.optim.lr_scheduler, self.info["lr_scheduler"]["name"], {"optimizer": self.opt, **self.info["lr_scheduler"]["args"]}
+        )
+
+    def reset_grad(self):
+        """
+        Reset gradients of all trainable parameters.
+        """
+        self.opt.zero_grad(set_to_none=True)
 
     def _resuming_model(self, model: torch.nn.Module):
         """Note: only for variable `self.model`"""
+        self.epoch = 0
         if self.resume:
             checkpoint = torch.load(self.resume)
             state_dict = checkpoint["state_dict"]
             model.load_state_dict(state_dict)
-            self.epoch = checkpoint["epoch"] + 1
-        else:
-            self.epoch = 0
+            # self.epoch = checkpoint["epoch"] + 1
+
+    def train(self) -> None:  # sourcery skip: low-code-quality
+        """
+        Call train_epoch() and test_epoch() for each epoch and log the results.
+        """
+        for epoch in range(self.epoch, self.max_epoch):
+            time_begin = time.time()
+
+            """1. Training epoch"""
+            metrics_train = self.train_epoch(epoch)
+            print(f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}Testing...")
+
+            """2. Testing epoch TODO!"""
+            test_epoch = plot_confusion(name="", interval=999)(self.test_epoch)
+            metrics_test = test_epoch(epoch)
+            time_end = time.time()
+            print("\x1b\x4d" * 2)  # move cursor up
+            print(f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}", end="")
+            print(f"{self.metrics_wrapper(metrics_test, with_color=True)}time:{int(time_end - time_begin):3d}s", end="", flush=True)
+
+            """3. Logging results"""
+            best = self._save_model_by_test_loss(epoch, metrics_test["test_loss"])  # need to be specified by yourself
+            self.metrics_writer.add_scalar("test_acc", metrics_test["test_acc"][0], global_step=epoch)  # need to be specified by yourself
+            # log to log.txt
+            self.logger.info(
+                f"Epoch: {epoch:<4d}| "
+                f"{self.metrics_wrapper(metrics_train)}{self.metrics_wrapper(metrics_test)}"
+                f'{"saving best model..." if best else ""}'
+            )
+            self._epoch_end()  # Must be called at the end of each epoch
+
+        self._train_end()  # Must be called at the end of the training
+
+    def _epoch_end(self) -> None:
+        self.epoch += 1
+
+    def _train_end(self) -> None:
+        """If this function is overrided, please call super()._train_end() at the end of the function."""
+        self.metrics_writer.close()
 
     @abstractmethod
-    def _prepare_opt(self):
+    def train_epoch(self, epoch: int) -> dict[str, metrics]:
         pass
 
     @abstractmethod
-    def _reset_grad(self):
+    def test_epoch(self, epoch: int, dataloader_test: DataLoader) -> dict[str, metrics]:
         pass
 
     @staticmethod
@@ -142,56 +222,16 @@ class _Trainer_Base(ABC):
             else "".join(f"{key}: {metric.metric:.4f} | " for key, metric in metrics.items())
         )
 
-    def train(self):  # sourcery skip: low-code-quality
-        """
-        Call train_epoch() and test_epoch() for each epoch and log the results.
-        """
-        for epoch in range(self.epoch, self.max_epoch):
-            time_begin = time.time()
-
-            """1. Training epoch"""
-            metrics_train = self.train_epoch(epoch)
-            print(f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}Testing...")
-
-            # time.sleep(1)
-            """2. Testing epoch"""
-            metrics_test = self.test_epoch(epoch)
-            time_end = time.time()
-            print("\x1b\x4d" * 2)  # move cursor up
-            print(f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}", end="")
-            print(f"{self.metrics_wrapper(metrics_test, with_color=True)}time:{int(time_end - time_begin):3d}s", end="", flush=True)
-
-            """3. Logging results"""
-            best = self._save_model_by_test_loss(epoch, metrics_test["test_loss"])  # need to be specified by yourself
-            self.metrics_writer.add_scalar("test_acc", metrics_test["test_acc"][0], global_step=epoch)  # need to be specified by yourself
-            # log to log.txt
-            self.logger.info(
-                f"Epoch: {epoch:<4d}| "
-                f"{self.metrics_wrapper(metrics_train)}{self.metrics_wrapper(metrics_test)}"
-                f'{"saving best model..." if best else ""}'
-            )
-            self._epoch_end(epoch)  # Can be called at the end of each epoch
-            self.epoch += 1
-
-        self._train_end()  # Must be called at the end of the training
-
-    def _epoch_end(self, epoch):
-        pass
-
-    def _train_end(self):
-        """If this function is overrided, please call super()._train_end() at the end of the function."""
-        self.metrics_writer.close()
-
-    @abstractmethod
-    def train_epoch(self, epoch: int) -> dict[str, metrics]:
-        pass
-
-    @abstractmethod
-    def test_epoch(self, epoch) -> dict[str, metrics]:
-        pass
-
     @staticmethod
-    def _plot_confusion_matrix_impl(photo_path, labels, predicts, classes, normalize=True, title="Confusion Matrix", cmap=plt.cm.Oranges):
+    def _plot_confusion_matrix_impl(
+        photo_path: str | Path,
+        labels: np.ndarray,
+        predicts: np.ndarray,
+        classes: list,
+        normalize: bool = True,
+        title: str = "Confusion Matrix",
+        cmap=plt.cm.Oranges,  # type: ignore
+    ) -> None:
         FONT_SIZE = 13
         cm = confusion_matrix(labels, predicts, labels=list(range(len(classes))))
         if normalize:
@@ -225,7 +265,7 @@ class _Trainer_Base(ABC):
     def _get_object(module, s: str, parameter: dict):
         return getattr(module, s)(**parameter)
 
-    def _get_logger(self):
+    def _get_logger(self) -> None:
         self.logger = logging.getLogger("train")
         self.logger.setLevel(logging.INFO)
         handler = logging.FileHandler(self.log_path)
@@ -237,10 +277,10 @@ class _Trainer_Base(ABC):
             f'{time.strftime("%Y-%m-%d %p %A", time.localtime())} - ' f"model: {type(self.model).__name__}"
         )  # Only log name of variable `self.model`
 
-    def _save_model_by_test_loss(self, epoch, valid_loss) -> bool:
-        flag = 0
+    def _save_model_by_test_loss(self, epoch: int, valid_loss: float) -> bool:
+        flag = False
         if valid_loss < self._min_valid_loss:
-            flag = 1
+            flag = True
             self._min_valid_loss = valid_loss
             if epoch % self.save_period == (__period := self.save_period - 1):
                 print(" | saving best model and checkpoint...")
@@ -256,7 +296,7 @@ class _Trainer_Base(ABC):
             print()
         return flag
 
-    def _save_checkpoint(self, epoch, save_best=False):
+    def _save_checkpoint(self, epoch: int, save_best: bool = False) -> None:
         arch = type(self.model).__name__
         state = {
             "arch": arch,
@@ -271,13 +311,13 @@ class _Trainer_Base(ABC):
             path = str(self.model_path / f"checkpoint-epoch{epoch}.pth")
             torch.save(state, path)
 
-    @staticmethod
-    def _adapt_epoch_to_step(params: dict, train_steps: int = None):
-        if params.get("epoch_size", False):  # get epoch_size rather than step_size
+    def _adapt_epoch_to_step(self) -> None:
+        params, train_steps = self.info["lr_scheduler"]["args"], len(self.dataloader_train)
+        if params.get("epoch_size"):  # get epoch_size rather than step_size
             params["step_size"] = int(params["epoch_size"] * train_steps)
             params.pop("epoch_size")
 
-    def progress(self, dataloader, epoch, test=False, total=None):
+    def progress(self, dataloader, epoch, test=False, total=None) -> Iterator:
         _progress = rich.progress.Progress(
             rich.progress.TextColumn("[progress.percentage]{task.description}"),
             rich.progress.SpinnerColumn("dots" if test else "moon", "progress.percentage", finished_text="[green]✔"),
@@ -295,32 +335,35 @@ class _Trainer_Base(ABC):
             try:
                 total = len(dataloader)
             except TypeError:
-                total = self.num_batches_test if test else self.num_batches_train
+                __key_1st_testloader = sorted(self.dataloader_test_dict.keys())[0]
+                total = len(self.dataloader_test_dict[__key_1st_testloader]) if test else len(self.dataloader_train)
 
         with _progress:
             description = "Testing" if test else f"Epoch {epoch+1}/{self.max_epoch}"
             yield from _progress.track(dataloader, total=total, description=description, update_period=0.1)
-            _progress.update(0, description=f"[green]Epoch {epoch+1:<2d}")
+            _progress.update(rich.progress.TaskID(0), description=f"[green]Epoch {epoch+1:<2d}")
 
 
 # a decorator to plot confusion matrix easily
-def plot_confusion(name="test", interval=1):
+def plot_confusion(name="test", interval=1) -> Callable[..., Callable[..., Any]]:
     def decorator(func_to_plot_confusion):
         # wrapper to the actual function, e.g. self.test_epoch(self, epoch, *args, **kwargs)
-        def wrapper(self, epoch, *args, **kwargs):
+        def wrapper(self: _Trainer_Base, epoch, *args, **kwargs):
             # 1. before the func: empty the public list
             self._y_pred, self._y_true = [], []
+            _y_pred_np: np.ndarray = np.array([])
+            _y_true_np: np.ndarray = np.array([])
             # 2. call the func
             metrics = func_to_plot_confusion(self, epoch, *args, **kwargs)
             # 3. after the func: check and plot the confusion matrix
             if epoch % interval == 0 and (len(self._y_pred) + len(self._y_true)) > 0:
                 if isinstance(self._y_pred, list) or isinstance(self._y_true, list):
-                    self._y_pred = np.concatenate(self._y_pred, axis=0)
-                    self._y_true = np.concatenate(self._y_true, axis=0)
+                    _y_pred_np = np.concatenate(self._y_pred, axis=0)
+                    _y_true_np = np.concatenate(self._y_true, axis=0)
                 self._plot_confusion_matrix_impl(
                     photo_path=self.confusion_path / f"{name}-{str(epoch).zfill(len(str(self.max_epoch)))}.png",
-                    labels=self._y_true,
-                    predicts=self._y_pred,
+                    labels=_y_true_np,
+                    predicts=_y_pred_np,
                     classes=list(range(self.num_classes)),
                 )
             return metrics

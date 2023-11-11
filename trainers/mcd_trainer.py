@@ -17,13 +17,13 @@ import datasets
 
 class MCDTrainer(_Trainer_Base):
     """
-    A simple implementation of MCD (https://arxiv.org/abs/1712.02560). The most essential 
+    A simple implementation of MCD (https://arxiv.org/abs/1712.02560). The most essential
     part of the code are the functions train_epoch() and test_epoch().
 
     Ref: https://github.com/mil-tokyo/MCD_DA
     """
 
-    def __init__(self, info: dict, resume=None, path=Path(), device=torch.device('cuda')):
+    def __init__(self, info: dict, resume=None, path=Path(), device=torch.device("cuda")):
         # Dataloaders, models, optimizers and loggers are prepared in super().__init__()
         super().__init__(info, resume, path, device)
 
@@ -36,23 +36,21 @@ class MCDTrainer(_Trainer_Base):
         Prepare the dataloaders for the source and target domains.
         """
         # datasets of source domain
-        self.dataset_source = self._get_object(datasets, info['dataloader_source']['dataset']['name'],
-                                               info['dataloader_source']['dataset']['args'])
-        self.dataset_val = self._get_object(datasets, info['dataloader_val']['dataset']['name'],
-                                            info['dataloader_val']['dataset']['args'])
-        self.dataloader_source = torch.utils.data.DataLoader(dataset=self.dataset_source,
-                                                             **info['dataloader_source']['args'])
-        self.dataloader_val = torch.utils.data.DataLoader(dataset=self.dataset_val,
-                                                          **info['dataloader_val']['args'])
+        self.dataset_source = self._get_object(
+            datasets, info["dataloader_source"]["dataset"]["name"], info["dataloader_source"]["dataset"]["args"]
+        )
+        self.dataset_val = self._get_object(datasets, info["dataloader_val"]["dataset"]["name"], info["dataloader_val"]["dataset"]["args"])
+        self.dataloader_source = torch.utils.data.DataLoader(dataset=self.dataset_source, **info["dataloader_source"]["args"])
+        self.dataloader_val = torch.utils.data.DataLoader(dataset=self.dataset_val, **info["dataloader_val"]["args"])
         # datasets of target domain
-        self.dataset_target = self._get_object(datasets, info['dataloader_target']['dataset']['name'],
-                                               info['dataloader_target']['dataset']['args'])
-        self.dataset_test = self._get_object(datasets, info['dataloader_test']['dataset']['name'],
-                                             info['dataloader_test']['dataset']['args'])
-        self.dataloader_target = torch.utils.data.DataLoader(dataset=self.dataset_target,
-                                                             **info['dataloader_target']['args'])
-        self.dataloader_test = torch.utils.data.DataLoader(dataset=self.dataset_test,
-                                                           **info['dataloader_test']['args'])
+        self.dataset_target = self._get_object(
+            datasets, info["dataloader_target"]["dataset"]["name"], info["dataloader_target"]["dataset"]["args"]
+        )
+        self.dataset_test = self._get_object(
+            datasets, info["dataloader_test"]["dataset"]["name"], info["dataloader_test"]["dataset"]["args"]
+        )
+        self.dataloader_target = torch.utils.data.DataLoader(dataset=self.dataset_target, **info["dataloader_target"]["args"])
+        self.dataloader_test = torch.utils.data.DataLoader(dataset=self.dataset_test, **info["dataloader_test"]["args"])
         # helper constants
         self.batch_size = self.dataloader_source.batch_size
         self.num_batches_train = min(len(self.dataloader_source), len(self.dataloader_target))
@@ -63,14 +61,14 @@ class MCDTrainer(_Trainer_Base):
         Prepare the models.
         """
         # the name `self.model` is reserved for some functions in the base class
-        self.model = self._get_object(models, info['model']['name'], info['model']['args'])
+        self.model = self._get_object(models, info["model"]["name"], info["model"]["args"])
         self._resuming_model(self.model)  # Prepare for resuming models
         self.C1 = models.Classifier(
-            input_dim=info['model']['args']['num_classes'], num_class=self.num_classes,
-            intermediate_dim=128, layers=3)
+            input_dim=info["model"]["args"]["num_classes"], num_class=self.num_classes, intermediate_dim=128, layers=3
+        )
         self.C2 = models.Classifier(
-            input_dim=info['model']['args']['num_classes'], num_class=self.num_classes,
-            intermediate_dim=128, layers=2)
+            input_dim=info["model"]["args"]["num_classes"], num_class=self.num_classes, intermediate_dim=128, layers=2
+        )
 
         self.model = self.model.to(self.device)
         self.C1 = self.C1.to(self.device)
@@ -81,24 +79,28 @@ class MCDTrainer(_Trainer_Base):
         Prepare the optimizers and corresponding learning rate schedulers.
         """
         # convert epoch_size to step_size like below:
-        self._adapt_epoch_to_step(info['lr_scheduler']['args'], self.num_batches_train)
-        self._adapt_epoch_to_step(info['lr_scheduler_C']['args'], self.num_batches_train)
+        self._adapt_epoch_to_step(info["lr_scheduler"]["args"], self.num_batches_train)
+        self._adapt_epoch_to_step(info["lr_scheduler_C"]["args"], self.num_batches_train)
 
-        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
-        self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
-                                             {'optimizer': self.opt, **info['lr_scheduler']['args']})
-        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
-        self.opt_C1 = torch.optim.Adam(params=self.C1.parameters(), lr=info['lr_scheduler_C']['init_lr'])
-        self.opt_C2 = torch.optim.Adam(params=self.C2.parameters(), lr=info['lr_scheduler_C']['init_lr'])
+        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info["lr_scheduler"]["init_lr"])
+        self.lr_scheduler = self._get_object(
+            torch.optim.lr_scheduler, info["lr_scheduler"]["name"], {"optimizer": self.opt, **info["lr_scheduler"]["args"]}
+        )
+        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info["lr_scheduler"]["init_lr"])
+        self.opt_C1 = torch.optim.Adam(params=self.C1.parameters(), lr=info["lr_scheduler_C"]["init_lr"])
+        self.opt_C2 = torch.optim.Adam(params=self.C2.parameters(), lr=info["lr_scheduler_C"]["init_lr"])
 
-        self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
-                                             {'optimizer': self.opt, **info['lr_scheduler']['args']})
-        self.lr_scheduler_C1 = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler_C']['name'],
-                                                {'optimizer': self.opt_C1, **info['lr_scheduler_C']['args']})
-        self.lr_scheduler_C2 = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler_C']['name'],
-                                                {'optimizer': self.opt_C2, **info['lr_scheduler_C']['args']})
+        self.lr_scheduler = self._get_object(
+            torch.optim.lr_scheduler, info["lr_scheduler"]["name"], {"optimizer": self.opt, **info["lr_scheduler"]["args"]}
+        )
+        self.lr_scheduler_C1 = self._get_object(
+            torch.optim.lr_scheduler, info["lr_scheduler_C"]["name"], {"optimizer": self.opt_C1, **info["lr_scheduler_C"]["args"]}
+        )
+        self.lr_scheduler_C2 = self._get_object(
+            torch.optim.lr_scheduler, info["lr_scheduler_C"]["name"], {"optimizer": self.opt_C2, **info["lr_scheduler_C"]["args"]}
+        )
 
-    def _reset_grad(self):
+    def reset_grad(self):
         """
         Reset gradients of all trainable parameters.
         """
@@ -133,7 +135,7 @@ class MCDTrainer(_Trainer_Base):
             loss_s1 = self.loss_func(output_s1, label_s)
             loss_s2 = self.loss_func(output_s2, label_s)
             loss_s = loss_s1 + loss_s2
-            self._reset_grad()
+            self.reset_grad()
             loss_s.backward()
             self.opt.step()
             self.opt_C1.step()
@@ -151,7 +153,7 @@ class MCDTrainer(_Trainer_Base):
             loss_s = loss_s1 + loss_s2
             loss_dis = self.discrepancy(output_t1, output_t2)
             loss = loss_s - loss_dis * self.discrepancy_weight
-            self._reset_grad()
+            self.reset_grad()
             loss.backward()
             self.opt_C1.step()
             self.opt_C2.step()
@@ -167,7 +169,7 @@ class MCDTrainer(_Trainer_Base):
                 output_t1 = self.C1(feature_t)
                 output_t2 = self.C2(feature_t)
                 loss_dis = self.discrepancy(output_t1, output_t2)
-                self._reset_grad()
+                self.reset_grad()
                 loss_dis.backward()
                 self.opt.step()
             # Computing metrics
@@ -185,7 +187,7 @@ class MCDTrainer(_Trainer_Base):
             "train_loss_dis": train_loss_discrepancy / self.num_batches_train,
             "acc_C1_s": num_correct_C1_src / num_samples,
             "acc_C2_s": num_correct_C2_src / num_samples,
-            "acc_tgt": (num_correct_tgt / num_samples, 'green')
+            "acc_tgt": (num_correct_tgt / num_samples, "green"),
         }
 
     @plot_confusion(name="test", interval=2)  # "test.png"
@@ -193,7 +195,7 @@ class MCDTrainer(_Trainer_Base):
         """Only relates to the test set of target domain."""
         # Helper variables
         num_correct, num_correct_C1, num_correct_C2, num_samples = 0, 0, 0, 0
-        test_loss = 0.
+        test_loss = 0.0
 
         self.model.eval()
         self.C1.eval()
@@ -211,9 +213,8 @@ class MCDTrainer(_Trainer_Base):
                 output2 = self.C2(feature)
                 # Computing metrics
                 num_samples += data.shape[0]
-                test_loss += (self.loss_func(output1, targets) +
-                              self.loss_func(output2, targets)).item() / 2
-                predicts = torch.argmax(output1+output2, dim=1)  # ensemble
+                test_loss += (self.loss_func(output1, targets) + self.loss_func(output2, targets)).item() / 2
+                predicts = torch.argmax(output1 + output2, dim=1)  # ensemble
                 num_correct += torch.sum(predicts == targets).item()
                 num_correct_C1 += torch.sum(torch.argmax(output1, dim=1) == targets).item()
                 num_correct_C2 += torch.sum(torch.argmax(output2, dim=1) == targets).item()
@@ -223,7 +224,7 @@ class MCDTrainer(_Trainer_Base):
 
         return {
             "test_loss": test_loss / self.num_batches_test,
-            "test_acc": (num_correct / num_samples, 'blue'),
+            "test_acc": (num_correct / num_samples, "blue"),
             "test_acc_C1": num_correct_C1 / num_samples,
             "test_acc_C2": num_correct_C2 / num_samples,
         }

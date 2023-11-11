@@ -39,5 +39,5 @@ print(f"--- Using device(s): {os.environ.get('CUDA_VISIBLE_DEVICES', 'default')}
 # load trainer from toml file
 import trainers  # filter unnecessary warnings 
 
-trainer: trainers.BasicTrainer = getattr(trainers, info["trainer"])(info, path)
+trainer: trainers.Trainer_Base = getattr(trainers, info["trainer"])(info, path)
 trainer.train()

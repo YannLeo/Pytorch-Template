@@ -19,8 +19,9 @@ class _GradientReverseFunction(torch.autograd.Function):
     """
     Helper class for gradient reversal layer (_GradientReverseLayer)
     """
+
     @staticmethod
-    def forward(ctx, input, coeff=1.) -> torch.Tensor:
+    def forward(ctx, input, coeff=1.0) -> torch.Tensor:
         ctx.coeff = coeff
         return input
 
@@ -47,39 +48,37 @@ class _GradientReverseLayer(nn.Module):
 
 class DANNTrainer(_Trainer_Base):
     """
-    A simple implementation of DANN (https://arxiv.org/abs/1505.07818) in PyTorch. The 
+    A simple implementation of DANN (https://arxiv.org/abs/1505.07818) in PyTorch. The
     most essential part of the code are the functions train_epoch() and test_epoch().
     """
 
-    def __init__(self, info: dict, resume=None, path=Path(), device=torch.device('cuda')):
+    def __init__(self, info: dict, resume=None, path=Path(), device=torch.device("cuda")):
         # Dataloaders, models, optimizers and loggers are prepared in super().__init__()
         super().__init__(info, resume, path, device)
 
         self.loss_func = nn.CrossEntropyLoss()
-        self.grl = _GradientReverseLayer(coeff=info['GRL_coeff'])
+        self.grl = _GradientReverseLayer(coeff=info["GRL_coeff"])
 
     def _prepare_dataloaders(self, info):
         """
         Prepare the dataloaders for the source and target domains.
         """
         # datasets of source domain
-        self.dataset_source = self._get_object(datasets, info['dataloader_source']['dataset']['name'],
-                                               info['dataloader_source']['dataset']['args'])
-        self.dataset_val = self._get_object(datasets, info['dataloader_val']['dataset']['name'],
-                                            info['dataloader_val']['dataset']['args'])
-        self.dataloader_source = torch.utils.data.DataLoader(dataset=self.dataset_source,
-                                                             **info['dataloader_source']['args'])
-        self.dataloader_val = torch.utils.data.DataLoader(dataset=self.dataset_val,
-                                                          **info['dataloader_val']['args'])
+        self.dataset_source = self._get_object(
+            datasets, info["dataloader_source"]["dataset"]["name"], info["dataloader_source"]["dataset"]["args"]
+        )
+        self.dataset_val = self._get_object(datasets, info["dataloader_val"]["dataset"]["name"], info["dataloader_val"]["dataset"]["args"])
+        self.dataloader_source = torch.utils.data.DataLoader(dataset=self.dataset_source, **info["dataloader_source"]["args"])
+        self.dataloader_val = torch.utils.data.DataLoader(dataset=self.dataset_val, **info["dataloader_val"]["args"])
         # datasets of target domain
-        self.dataset_target = self._get_object(datasets, info['dataloader_target']['dataset']['name'],
-                                               info['dataloader_target']['dataset']['args'])
-        self.dataset_test = self._get_object(datasets, info['dataloader_test']['dataset']['name'],
-                                             info['dataloader_test']['dataset']['args'])
-        self.dataloader_target = torch.utils.data.DataLoader(dataset=self.dataset_target,
-                                                             **info['dataloader_target']['args'])
-        self.dataloader_test = torch.utils.data.DataLoader(dataset=self.dataset_test,
-                                                           **info['dataloader_test']['args'])
+        self.dataset_target = self._get_object(
+            datasets, info["dataloader_target"]["dataset"]["name"], info["dataloader_target"]["dataset"]["args"]
+        )
+        self.dataset_test = self._get_object(
+            datasets, info["dataloader_test"]["dataset"]["name"], info["dataloader_test"]["dataset"]["args"]
+        )
+        self.dataloader_target = torch.utils.data.DataLoader(dataset=self.dataset_target, **info["dataloader_target"]["args"])
+        self.dataloader_test = torch.utils.data.DataLoader(dataset=self.dataset_test, **info["dataloader_test"]["args"])
         # helper constants
         self.batch_size = self.dataloader_source.batch_size
         self.num_batches_train = min(len(self.dataloader_source), len(self.dataloader_target))
@@ -90,14 +89,14 @@ class DANNTrainer(_Trainer_Base):
         Prepare the models.
         """
         # the name `self.model` is reserved for some functions in the base class
-        self.model = self._get_object(models, info['model']['name'], info['model']['args'])
+        self.model = self._get_object(models, info["model"]["name"], info["model"]["args"])
         self._resuming_model(self.model)  # Prepare for resuming models
         self.classifier_content = models.Classifier(
-            input_dim=info['model']['args']['num_classes'], num_class=self.num_classes,
-            intermediate_dim=128, layers=2)
+            input_dim=info["model"]["args"]["num_classes"], num_class=self.num_classes, intermediate_dim=128, layers=2
+        )
         self.classifier_domain = models.Classifier(
-            input_dim=info['model']['args']['num_classes'], num_class=self.num_classes,
-            intermediate_dim=128, layers=2)
+            input_dim=info["model"]["args"]["num_classes"], num_class=self.num_classes, intermediate_dim=128, layers=2
+        )
 
         self.model = self.model.to(self.device)
         self.classifier_content = self.classifier_content.to(self.device)
@@ -108,22 +107,26 @@ class DANNTrainer(_Trainer_Base):
         Prepare the optimizers and corresponding learning rate schedulers.
         """
         # convert epoch_size to step_size like below:
-        self._adapt_epoch_to_step(info['lr_scheduler']['args'], self.num_batches_train)
-        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
-        self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
-                                             {'optimizer': self.opt, **info['lr_scheduler']['args']})
-        self.opt = torch.optim.Adam(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
-        self.opt_content = torch.optim.Adam(params=self.classifier_content.parameters(), lr=info['lr_scheduler']['init_lr']/2)
-        self.opt_domain = torch.optim.Adam(params=self.classifier_domain.parameters(), lr=info['lr_scheduler']['init_lr']/2)
+        self._adapt_epoch_to_step(info["lr_scheduler"]["args"], self.num_batches_train)
+        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info["lr_scheduler"]["init_lr"])
+        self.lr_scheduler = self._get_object(
+            torch.optim.lr_scheduler, info["lr_scheduler"]["name"], {"optimizer": self.opt, **info["lr_scheduler"]["args"]}
+        )
+        self.opt = torch.optim.Adam(params=self.model.parameters(), lr=info["lr_scheduler"]["init_lr"])
+        self.opt_content = torch.optim.Adam(params=self.classifier_content.parameters(), lr=info["lr_scheduler"]["init_lr"] / 2)
+        self.opt_domain = torch.optim.Adam(params=self.classifier_domain.parameters(), lr=info["lr_scheduler"]["init_lr"] / 2)
 
-        self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
-                                             {'optimizer': self.opt, **info['lr_scheduler']['args']})
-        self.lr_scheduler_content = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
-                                                     {'optimizer': self.opt_content, **info['lr_scheduler']['args']})
-        self.lr_scheduler_domain = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
-                                                    {'optimizer': self.opt_domain, **info['lr_scheduler']['args']})
+        self.lr_scheduler = self._get_object(
+            torch.optim.lr_scheduler, info["lr_scheduler"]["name"], {"optimizer": self.opt, **info["lr_scheduler"]["args"]}
+        )
+        self.lr_scheduler_content = self._get_object(
+            torch.optim.lr_scheduler, info["lr_scheduler"]["name"], {"optimizer": self.opt_content, **info["lr_scheduler"]["args"]}
+        )
+        self.lr_scheduler_domain = self._get_object(
+            torch.optim.lr_scheduler, info["lr_scheduler"]["name"], {"optimizer": self.opt_domain, **info["lr_scheduler"]["args"]}
+        )
 
-    def _reset_grad(self):
+    def reset_grad(self):
         """
         Reset gradients of all trainable parameters.
         """
@@ -131,6 +134,7 @@ class DANNTrainer(_Trainer_Base):
         self.opt_content.zero_grad(set_to_none=True)
         self.opt_domain.zero_grad(set_to_none=True)
 
+    @plot_confusion(name="train", interval=999)  # "train.png
     def train_epoch(self, epoch):  # sourcery skip: low-code-quality
         """
         Main training process
@@ -161,14 +165,13 @@ class DANNTrainer(_Trainer_Base):
             feature_s, feature_t = self.grl(feature_s), self.grl(feature_t)  # GRL
             output_domain_src = self.classifier_domain(feature_s)
             output_domain_tgt = self.classifier_domain(feature_t)
-            loss_domain = 0.5 * (self.loss_func(output_domain_src, label_ones) +
-                                 self.loss_func(output_domain_tgt, label_zeros))
+            loss_domain = 0.5 * (self.loss_func(output_domain_src, label_ones) + self.loss_func(output_domain_tgt, label_zeros))
 
             # 2. Computing total loss
             loss = loss_content_src + loss_domain
 
             # 3. Backwarding
-            self._reset_grad()
+            self.reset_grad()
             loss.backward()
             self.opt.step()
             self.opt_content.step()
@@ -182,13 +185,14 @@ class DANNTrainer(_Trainer_Base):
             # 5. Computing metrics
             num_samples += label_s.shape[0]
             num_correct_content += (output_content_src.argmax(dim=1) == label_s).sum().item()
-            num_correct_domain += (output_domain_src.argmax(dim=1) == label_ones).sum().item() + \
-                (output_domain_tgt.argmax(dim=1) == label_zeros).sum().item()
+            num_correct_domain += (output_domain_src.argmax(dim=1) == label_ones).sum().item() + (
+                output_domain_tgt.argmax(dim=1) == label_zeros
+            ).sum().item()
             train_loss_content_src += loss_content_src.item()
 
         return {
             "train_loss": train_loss_content_src / self.num_batches_train,  # content losss of src domain
-            "train_acc": (num_correct_content / num_samples, 'red'),  # acc of content classifier on src domain
+            "train_acc": (num_correct_content / num_samples, "red"),  # acc of content classifier on src domain
             "train_acc_domain": num_correct_domain / num_samples / 2,
         }
 
@@ -197,7 +201,7 @@ class DANNTrainer(_Trainer_Base):
         """Only relates to the test set of target domain."""
         # Helper variables
         num_correct_domain, num_correct_content, num_samples = 0, 0, 0
-        test_loss_content = 0.
+        test_loss_content = 0.0
         label_zeros = torch.zeros(self.dataloader_test.batch_size).long().to(self.device)  # tgt domain
 
         self.model.eval()
@@ -225,6 +229,6 @@ class DANNTrainer(_Trainer_Base):
 
         return {
             "test_loss": test_loss_content / self.num_batches_test,  # 　content loss of tgt domain
-            "test_acc": (num_correct_content / num_samples, 'green'),  # acc of content classifier on tgt domain
+            "test_acc": (num_correct_content / num_samples, "green"),  # acc of content classifier on tgt domain
             "test_acc_domain": num_correct_domain / num_samples,
         }
