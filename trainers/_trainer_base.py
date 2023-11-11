@@ -52,7 +52,7 @@ _color_map = {
 
 
 class metrics(NamedTuple):
-    metric: int | float
+    metric: int | float = 0
     color: str = "k"
 
 
@@ -81,7 +81,7 @@ class _Trainer_Base(ABC):
         self.model_path: Path = path / "model"
         self.confusion_path: Path = path / "confusion_matrix"
         self.save_period: int = info["save_period"]
-        self._min_valid_loss: float = np.inf
+        self._min_test_loss: float = np.inf
         self._min_valid_pretrain_loss: float = np.inf
 
         self.model: torch.nn.Module  # must be defined in `self._prepare_models()`
@@ -157,37 +157,55 @@ class _Trainer_Base(ABC):
     def train(self) -> None:  # sourcery skip: low-code-quality
         """
         Call train_epoch() and test_epoch() for each epoch and log the results.
+        The best model is defined by the test loss of the FIRST dataset_test by default.
+        Change the behavior self._epoch_end().
         """
+        test_loaders: list[str] = sorted(self.dataloader_test_dict.keys())
         for epoch in range(self.epoch, self.max_epoch):
-            time_begin = time.time()
+            time_flag = time.time()
 
             """1. Training epoch"""
             metrics_train = self.train_epoch(epoch)
-            print(f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}Testing...")
+            _str = f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}"
+            print(_str, "Testing...", end="\b" * 10)
 
-            """2. Testing epoch TODO!"""
-            test_epoch = plot_confusion(name="", interval=999)(self.test_epoch)
-            metrics_test = test_epoch(epoch)
-            time_end = time.time()
-            print("\x1b\x4d" * 2)  # move cursor up
-            print(f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}", end="")
-            print(f"{self.metrics_wrapper(metrics_test, with_color=True)}time:{int(time_end - time_begin):3d}s", end="", flush=True)
+            """2. Testing epoch(s)"""
+            list_metrics_test: list[dict[str, metrics]] = []
+            metrics_test: dict[str, metrics] = {}
+            for idx, test_loader in enumerate(test_loaders):
+                test_epoch = plot_confusion(name=test_loader.split("_")[-1], interval=5)(self.test_epoch)
+                metrics_test = test_epoch(epoch, self.dataloader_test_dict[test_loader])
+                list_metrics_test.append(metrics_test)
+                print(
+                    f"{self.metrics_wrapper(metrics_test, with_color=True)}time:{int(time.time() - time_flag):3d}s | Testing...",
+                    end="\b" * 11,
+                )
 
-            """3. Logging results"""
-            best = self._save_model_by_test_loss(epoch, metrics_test["test_loss"])  # need to be specified by yourself
-            self.metrics_writer.add_scalar("test_acc", metrics_test["test_acc"][0], global_step=epoch)  # need to be specified by yourself
-            # log to log.txt
-            self.logger.info(
-                f"Epoch: {epoch:<4d}| "
-                f"{self.metrics_wrapper(metrics_train)}{self.metrics_wrapper(metrics_test)}"
-                f'{"saving best model..." if best else ""}'
-            )
-            self._epoch_end()  # Must be called at the end of each epoch
+                """3. Logging results"""
+                self.metrics_writer.add_scalar(
+                    f"test_acc{idx}", metrics_test["test_acc"].metric, global_step=epoch
+                )  # need to be specified by yourself
 
+            # The end of each epoch
+            self._epoch_end(epoch, metrics_train, list_metrics_test)  # Must be called at the end of each epoch
+
+        # The end of the whole training
         self._train_end()  # Must be called at the end of the training
 
-    def _epoch_end(self) -> None:
-        self.epoch += 1
+    def _epoch_end(
+        self, epoch: int, metrics_train: dict[str, metrics], list_metrics_test: list[dict[str, metrics]], *args, **kwargs
+    ) -> None:
+        self.epoch = epoch
+        # Need to be specified by yourself:
+        # which dataloader_test (first, i.e., 0 by default) to use and which metric (tset_loss by default) to use.
+        best = self._save_model_by_test_loss(epoch, list_metrics_test[0]["test_loss"].metric)
+
+        # Logging to log.txt
+        self.logger.info(
+            f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train)}",
+            "".join([f"{self.metrics_wrapper(metrics)}" for metrics in list_metrics_test]),
+            f'{"saving best model..." if best else ""}',
+        )
 
     def _train_end(self) -> None:
         """If this function is overrided, please call super()._train_end() at the end of the function."""
@@ -277,12 +295,12 @@ class _Trainer_Base(ABC):
             f'{time.strftime("%Y-%m-%d %p %A", time.localtime())} - ' f"model: {type(self.model).__name__}"
         )  # Only log name of variable `self.model`
 
-    def _save_model_by_test_loss(self, epoch: int, valid_loss: float) -> bool:
+    def _save_model_by_test_loss(self, epoch: int, test_loss: float) -> bool:
         flag = False
-        if valid_loss < self._min_valid_loss:
+        if test_loss < self._min_test_loss:  # meet the condition to save the model
             flag = True
-            self._min_valid_loss = valid_loss
-            if epoch % self.save_period == (__period := self.save_period - 1):
+            self._min_test_loss = test_loss
+            if epoch % self.save_period == (self.save_period - 1):
                 print(" | saving best model and checkpoint...")
                 self._save_checkpoint(epoch, True)
                 self._save_checkpoint(epoch, False)
@@ -293,7 +311,7 @@ class _Trainer_Base(ABC):
             print(" | saving checkpoint...")
             self._save_checkpoint(epoch, False)
         else:
-            print()
+            print(" " * 11)
         return flag
 
     def _save_checkpoint(self, epoch: int, save_best: bool = False) -> None:
@@ -345,7 +363,7 @@ class _Trainer_Base(ABC):
 
 
 # a decorator to plot confusion matrix easily
-def plot_confusion(name="test", interval=1) -> Callable[..., Callable[..., Any]]:
+def plot_confusion(name="test", interval=1) -> Callable[..., Callable[[int, DataLoader], dict[str, metrics]]]:
     def decorator(func_to_plot_confusion):
         # wrapper to the actual function, e.g. self.test_epoch(self, epoch, *args, **kwargs)
         def wrapper(self: _Trainer_Base, epoch, *args, **kwargs):

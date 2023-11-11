@@ -17,7 +17,7 @@ class BasicTrainer(_Trainer_Base):
         super().__init__(info, path, device)
         self.loss_func = nn.CrossEntropyLoss(label_smoothing=info["label_smoothing"])
 
-    @plot_confusion(name="train", interval=999)  # "train.png"
+    @plot_confusion(name="train", interval=6)  # "train.png"
     def train_epoch(self, epoch: int) -> dict[str, metrics]:  # sourcery skip: low-code-quality
         """
         The main training process, which will be called in self.train()
