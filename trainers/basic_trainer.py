@@ -8,10 +8,10 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from pathlib import Path
-from ._trainer_base import _Trainer_Base, plot_confusion, metrics
+from ._trainer_base import _TrainerBase, plot_confusion, metrics
 
 
-class BasicTrainer(_Trainer_Base):
+class BasicTrainer(_TrainerBase):
     def __init__(self, info: dict, path=Path(), device=torch.device("cuda")) -> None:
         """(1)Dataloaders, (2)models, (3)optimizers along with schedulers and (4)loggers are prepared in super().__init__() in sequence."""
         super().__init__(info, path, device)
@@ -30,7 +30,7 @@ class BasicTrainer(_Trainer_Base):
         targets: torch.Tensor
 
         self.model.train()  # don't forget
-        for batch, (data, targets) in self.progress(enumerate(self.dataloader_train), epoch=epoch):
+        for batch, (data, targets) in enumerate(self.progress(self.dataloader_train, epoch=epoch)):
             self._y_true.append(targets.numpy())  # for plotting confusion matrix
             data, targets = data.to(self.device), targets.to(self.device)
 

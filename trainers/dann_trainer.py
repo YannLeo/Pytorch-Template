@@ -10,7 +10,7 @@ import torch
 from torch import nn
 import numpy as np
 from pathlib import Path
-from ._trainer_base import _Trainer_Base, plot_confusion
+from ._trainer_base import _TrainerBase, plot_confusion
 import models
 import datasets
 
@@ -46,7 +46,7 @@ class _GradientReverseLayer(nn.Module):
         return _GradientReverseFunction.apply(x, self.coeff)
 
 
-class DANNTrainer(_Trainer_Base):
+class DANNTrainer(_TrainerBase):
     """
     A simple implementation of DANN (https://arxiv.org/abs/1505.07818) in PyTorch. The
     most essential part of the code are the functions train_epoch() and test_epoch().

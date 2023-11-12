@@ -10,12 +10,12 @@ import torch
 from torch import nn
 import numpy as np
 from pathlib import Path
-from ._trainer_base import _Trainer_Base, plot_confusion
+from ._trainer_base import _TrainerBase, plot_confusion
 import models
 import datasets
 
 
-class MCDTrainer(_Trainer_Base):
+class MCDTrainer(_TrainerBase):
     """
     A simple implementation of MCD (https://arxiv.org/abs/1712.02560). The most essential
     part of the code are the functions train_epoch() and test_epoch().

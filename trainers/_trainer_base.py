@@ -56,7 +56,7 @@ class metrics(NamedTuple):
     color: str = "k"
 
 
-class _Trainer_Base(ABC):
+class _TrainerBase(ABC):
     def __init__(self, info: dict, path: Path = Path(), device=torch.device("cuda")):
         """
         Initialize the model, optimizer, scheduler, dataloader, and logger.
@@ -110,7 +110,7 @@ class _Trainer_Base(ABC):
         self.dataset_train = self._get_object(datasets, train_loader_config["dataset"]["name"], train_loader_config["dataset"]["args"])
         self.dataloader_train = DataLoader(dataset=self.dataset_train, **train_loader_config["args"])
         # Load testing dataloaders as a dict, sorted by name
-        test_loaders = filter(lambda x: "dataloader_test" in x, self.info)  # multiple dataloaders for testing
+        test_loaders = list(filter(lambda x: "dataloader_test" in x, self.info))  # multiple dataloaders for testing
         dataset_test_dict = {
             test_loader_name: self._get_object(
                 datasets, self.info[test_loader_name]["dataset"]["name"], self.info[test_loader_name]["dataset"]["args"]
@@ -166,15 +166,16 @@ class _Trainer_Base(ABC):
 
             """1. Training epoch"""
             metrics_train = self.train_epoch(epoch)
-            _str = f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}"
-            print(_str, "Testing...", end="\b" * 10)
+            print(f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}", "Testing...", end="\b" * 10)
 
             """2. Testing epoch(s)"""
             list_metrics_test: list[dict[str, metrics]] = []
             metrics_test: dict[str, metrics] = {}
             for idx, test_loader in enumerate(test_loaders):
-                test_epoch = plot_confusion(name=test_loader.split("_")[-1], interval=5)(self.test_epoch)
-                metrics_test = test_epoch(epoch, self.dataloader_test_dict[test_loader])
+                # Why type(self)? Because `func_to_plot_confusion` in `plot_confusion` will add `self` as the first argument
+                # when use `plot_confusion(self.test_epoch)`. But using `@plot_confusion()` before `self.test_epoch(self)` will not.
+                test_epoch = plot_confusion(name=test_loader.split("_")[-1], interval=5)(type(self).test_epoch)
+                metrics_test = test_epoch(self, epoch, self.dataloader_test_dict[test_loader])
                 list_metrics_test.append(metrics_test)
                 print(
                     f"{self.metrics_wrapper(metrics_test, with_color=True)}time:{int(time.time() - time_flag):3d}s | Testing...",
@@ -366,7 +367,7 @@ class _Trainer_Base(ABC):
 def plot_confusion(name="test", interval=1) -> Callable[..., Callable[..., dict[str, metrics]]]:
     def decorator(func_to_plot_confusion: Callable[..., dict[str, metrics]]):
         # wrapper to the actual function, e.g. self.test_epoch(self, epoch, *args, **kwargs)
-        def wrapper(self: _Trainer_Base, epoch, *args, **kwargs):
+        def wrapper(self: _TrainerBase, epoch, *args, **kwargs):
             # 1. before the func: empty the public list
             self._y_pred, self._y_true = [], []
             _y_pred_np: np.ndarray = np.array([])
