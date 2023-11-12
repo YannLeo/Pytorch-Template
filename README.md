@@ -33,6 +33,7 @@ Hi~ 这是一个 `Pytorch` 的训练模板, 总体使用原则是: 根据指定�
 
   用于存放某一次实验的 `toml` 配置文件. 它主要包含了这次实验要读取的数据集 `dataset`, 核心训练逻辑 `trainer`, 重要超参数和学习率策略 `lr_scheduler` 等等, 可以自己按需拓展.
   设置绝大多数会被具体 `trainer` 及其父类的 `__init__()` 根据 `main.py` 产生的 `info` 字典载入, 自己拓展时可以参考此处代码. 
+  现已支持自动载入多个数据集, 有且仅有一个训练集(名称为 dataloader_train), 可以有零个或多个测试集(名称须包含 dataloader_test).
 
 - datasets (Python package)
 
@@ -126,3 +127,6 @@ python main.py -c configs/mnist.toml
 - [x] 用 `rich` 替换 `tqdm`
 - [ ] 半精度 FP-16 支持
 - [ ] 完善的注释与双语 README
+- [x] 自动载入任意多的测试集
+- [x] TypeHint 完善
+- [ ] warm-up 支持

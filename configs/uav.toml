@@ -8,7 +8,7 @@ resume = ''
 label_smoothing = 0.05
 
 ############################### Miscellaneous
-epochs = 20
+epochs = 50
 save_period = 5
 num_classes = 8
 
@@ -21,7 +21,7 @@ name = 'ResNext1D'
 in_channels=1  
 base_filters=16
 filter_list=[16, 16, 32, 64]  
-m_blocks_list=[1, 1, 1, 2]  
+m_blocks_list=[2, 2, 2, 2]  
 kernel_size=3  
 groups_width=8  
 stride=2  
@@ -34,29 +34,29 @@ n_classes=8
 args = { batch_size = 512, num_workers = 1, shuffle = true, drop_last = false, pin_memory = true }
 [dataloader_train.dataset]
 name = "UAVDataset"
-args = { rounds=[0], kinds=[0, 1, 2, 3, 4, 5, 6, 7], num_samples=100, mode="train" }
+args = { rounds=[0, 1], kinds=[0, 1, 2, 3, 4, 5, 6, 7], num_samples=2000, mode="train" }
 
 [dataloader_test]
 args = { batch_size = 1024, num_workers = 1, shuffle = false, drop_last = false, pin_memory = true }
 [dataloader_test.dataset]
 name = "UAVDataset"
-args = { rounds=[0], kinds=[0, 1, 2, 3, 4, 5, 6, 7], num_samples=50, mode="test" }
+args = { rounds=[0, 1], kinds=[0, 1, 2, 3, 4, 5, 6, 7], num_samples=500, mode="test" }
 
 [dataloader_test1]
 args = { batch_size = 1024, num_workers = 1, shuffle = false, drop_last = false, pin_memory = true }
 [dataloader_test1.dataset]
 name = "UAVDataset"
-args = { rounds=[1], kinds=[0, 1, 2, 3, 4, 5, 6, 7], num_samples=50, mode="test" }
+args = { rounds=[2], kinds=[0, 1, 2, 3, 4, 5, 6, 7], num_samples=500, mode="test" }
 
 [dataloader_test2]
 args = { batch_size = 1024, num_workers = 1, shuffle = false, drop_last = false, pin_memory = true }
 [dataloader_test2.dataset]
 name = "UAVDataset"
-args = { rounds=[2], kinds=[0, 1, 2, 3, 4, 5, 6, 7], num_samples=50, mode="test" }
+args = { rounds=[3], kinds=[0, 1, 2, 3, 4, 5, 6, 7], num_samples=500, mode="test" }
 
 
 ############################### Learning Rate Schedulers for Optimizers
 [lr_scheduler]
 name = "StepLR"
 init_lr = 0.0066
-args = { epoch_size = 6.6, gamma = 0.6 }
+args = { epoch_size = 10, gamma = 0.6 }

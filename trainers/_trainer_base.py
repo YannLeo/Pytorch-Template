@@ -4,7 +4,7 @@
 # @File       : _trainer_base.py
 # @Note       : The base class of all trainers, and some tools for training
 
-from typing import NamedTuple, Iterator, Callable, Any
+from typing import NamedTuple, Iterator, Callable
 from abc import ABC, abstractmethod
 import itertools
 import logging
@@ -57,6 +57,8 @@ class metrics(NamedTuple):
 
 
 class _TrainerBase(ABC):
+    LINE_UP = "\033[1A"
+
     def __init__(self, info: dict, path: Path = Path(), device=torch.device("cuda")):
         """
         Initialize the model, optimizer, scheduler, dataloader, and logger.
@@ -147,7 +149,7 @@ class _TrainerBase(ABC):
 
     def _resuming_model(self, model: torch.nn.Module):
         """Note: only for variable `self.model`"""
-        self.epoch = 0
+        self.epoch = 1
         if self.resume:
             checkpoint = torch.load(self.resume)
             state_dict = checkpoint["state_dict"]
@@ -161,12 +163,13 @@ class _TrainerBase(ABC):
         Change the behavior self._epoch_end().
         """
         test_loaders: list[str] = sorted(self.dataloader_test_dict.keys())
-        for epoch in range(self.epoch, self.max_epoch):
+        for epoch in range(self.epoch, self.max_epoch + 1):
             time_flag = time.time()
 
             """1. Training epoch"""
             metrics_train = self.train_epoch(epoch)
-            print(f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}", "Testing...", end="\b" * 10)
+            _str = f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}"
+            print(_str + ("Testing..." if test_loaders else ""), end="\n" if test_loaders else "")
 
             """2. Testing epoch(s)"""
             list_metrics_test: list[dict[str, metrics]] = []
@@ -177,17 +180,18 @@ class _TrainerBase(ABC):
                 test_epoch = plot_confusion(name=test_loader.split("_")[-1], interval=5)(type(self).test_epoch)
                 metrics_test = test_epoch(self, epoch, self.dataloader_test_dict[test_loader])
                 list_metrics_test.append(metrics_test)
+                _str += f"{self.metrics_wrapper(metrics_test, with_color=True)}"
                 print(
-                    f"{self.metrics_wrapper(metrics_test, with_color=True)}time:{int(time.time() - time_flag):3d}s | Testing...",
-                    end="\b" * 11,
+                    self.LINE_UP + _str + ("Testing..." if idx != len(test_loaders) - 1 else ""),
+                    end="\n" if idx != len(test_loaders) - 1 else "",
                 )
 
                 """3. Logging results"""
-                self.metrics_writer.add_scalar(
-                    f"test_acc{idx}", metrics_test["test_acc"].metric, global_step=epoch
-                )  # need to be specified by yourself
+                # need to be specified by yourself
+                self.metrics_writer.add_scalar(f"test_acc{idx}", metrics_test["test_acc"].metric, global_step=epoch)
 
             # The end of each epoch
+            print(f"time:{int(time.time() - time_flag):3d}s", end="")
             self._epoch_end(epoch, metrics_train, list_metrics_test)  # Must be called at the end of each epoch
 
         # The end of the whole training
@@ -199,13 +203,15 @@ class _TrainerBase(ABC):
         self.epoch = epoch
         # Need to be specified by yourself:
         # which dataloader_test (first, i.e., 0 by default) to use and which metric (tset_loss by default) to use.
-        best = self._save_model_by_test_loss(epoch, list_metrics_test[0]["test_loss"].metric)
-
+        if list_metrics_test:
+            best = self._save_model_by_test_loss(epoch, list_metrics_test[0]["test_loss"].metric)
+        else:
+            best = self._save_model_by_test_loss(epoch, metrics_train["train_loss"].metric)
         # Logging to log.txt
         self.logger.info(
-            f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train)}",
-            "".join([f"{self.metrics_wrapper(metrics)}" for metrics in list_metrics_test]),
-            f'{"saving best model..." if best else ""}',
+            f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train)}"
+            + "".join([f"{self.metrics_wrapper(metrics)}" for metrics in list_metrics_test])
+            + f'{"saving best model..." if best else ""}',
         )
 
     def _train_end(self) -> None:
@@ -301,7 +307,7 @@ class _TrainerBase(ABC):
         if test_loss < self._min_test_loss:  # meet the condition to save the model
             flag = True
             self._min_test_loss = test_loss
-            if epoch % self.save_period == (self.save_period - 1):
+            if epoch % self.save_period == 0:
                 print(" | saving best model and checkpoint...")
                 self._save_checkpoint(epoch, True)
                 self._save_checkpoint(epoch, False)
@@ -312,7 +318,7 @@ class _TrainerBase(ABC):
             print(" | saving checkpoint...")
             self._save_checkpoint(epoch, False)
         else:
-            print(" " * 11)
+            print()
         return flag
 
     def _save_checkpoint(self, epoch: int, save_best: bool = False) -> None:
@@ -358,9 +364,9 @@ class _TrainerBase(ABC):
                 total = len(self.dataloader_test_dict[__key_1st_testloader]) if test else len(self.dataloader_train)
 
         with _progress:
-            description = "Testing" if test else f"Epoch {epoch+1}/{self.max_epoch}"
+            description = "Testing" if test else f"Epoch {epoch}/{self.max_epoch}"
             yield from _progress.track(dataloader, total=total, description=description, update_period=0.1)
-            _progress.update(rich.progress.TaskID(0), description=f"[green]Epoch {epoch+1:<2d}")
+            _progress.update(rich.progress.TaskID(0), description=f"[green]Epoch {epoch:<2d}")
 
 
 # a decorator to plot confusion matrix easily
