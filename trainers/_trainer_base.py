@@ -4,7 +4,7 @@
 # @File       : _trainer_base.py
 # @Note       : The base class of all trainers, and some tools for training
 
-from typing import NamedTuple, Iterator, Callable
+from typing import NamedTuple, Iterator, Callable, Any
 from abc import ABC, abstractmethod
 import itertools
 import logging
@@ -57,9 +57,9 @@ class metrics(NamedTuple):
 
 
 class _TrainerBase(ABC):
-    LINE_UP = "\033[1A"
+    LINE_UP = "\033[1A"  # ANSI escape code: move cursor up one line
 
-    def __init__(self, info: dict, path: Path = Path(), device=torch.device("cuda")):
+    def __init__(self, info: dict[str, Any], path: Path = Path(), device=torch.device("cuda")):
         """
         Initialize the model, optimizer, scheduler, dataloader, and logger.
 
@@ -93,8 +93,8 @@ class _TrainerBase(ABC):
         self._y_pred: list = []
 
         # 1. Dataloaders
-        self._prepare_dataloaders()
-        self._adapt_epoch_to_step()
+        self._prepare_dataloaders()                    
+        self._adapt_epoch_to_step()  # adapt epoch_size to step_size               
         # 2. Defination and initialization of the models
         self._prepare_models()
         # 3. Optimizers and schedulers of the models
@@ -103,14 +103,20 @@ class _TrainerBase(ABC):
         self._get_logger()  # txt logger
         self.metrics_writer: SummaryWriter = SummaryWriter(path / "log")
 
-    def _prepare_dataloaders(self):
+    def _prepare_dataloaders(self) -> None:
         """
         1. Prepare dataloaders for training (single) and testing (multiple).
         """
-        train_loader_config = self.info["dataloader_train"]  # single dataloader for training
-        # Load training dataloader
-        self.dataset_train = self._get_object(datasets, train_loader_config["dataset"]["name"], train_loader_config["dataset"]["args"])
-        self.dataloader_train = DataLoader(dataset=self.dataset_train, **train_loader_config["args"])
+        # Load training dataloader, if exists
+        try:
+            train_loader_config = self.info["dataloader_train"]  # single dataloader for training
+            # Load training dataloader
+            self.dataset_train = self._get_object(datasets, train_loader_config["dataset"]["name"], train_loader_config["dataset"]["args"])
+            self.dataloader_train = DataLoader(dataset=self.dataset_train, **train_loader_config["args"])
+            self.train_steps = len(self.dataloader_train) 
+        except KeyError:
+            print("Skipping loading training dataloader because of lacking key in toml: `dataloader_train`.")
+
         # Load testing dataloaders as a dict, sorted by name
         test_loaders = list(filter(lambda x: "dataloader_test" in x, self.info))  # multiple dataloaders for testing
         dataset_test_dict = {
@@ -124,7 +130,7 @@ class _TrainerBase(ABC):
             for test_loader_name in test_loaders
         }
 
-    def _prepare_models(self):
+    def _prepare_models(self) -> None:
         """
         2. Prepare models for training. The name `self.model` is reserved for some functions in the base class
         """
@@ -132,7 +138,7 @@ class _TrainerBase(ABC):
         self._resuming_model(self.model)  # Prepare for resuming models, will not resume optimizers and schedulers!!
         self.model = self.model.to(self.device)
 
-    def _prepare_opt(self):
+    def _prepare_opt(self) -> None:
         """
         3. Prepare optimizers and corresponding learning rate schedulers.
         """
@@ -141,13 +147,13 @@ class _TrainerBase(ABC):
             torch.optim.lr_scheduler, self.info["lr_scheduler"]["name"], {"optimizer": self.opt, **self.info["lr_scheduler"]["args"]}
         )
 
-    def reset_grad(self):
+    def reset_grad(self) -> None:
         """
         Reset gradients of all trainable parameters.
         """
         self.opt.zero_grad(set_to_none=True)
 
-    def _resuming_model(self, model: torch.nn.Module):
+    def _resuming_model(self, model: torch.nn.Module) -> None:
         """Note: only for variable `self.model`"""
         self.epoch = 1
         if self.resume:
@@ -287,7 +293,7 @@ class _TrainerBase(ABC):
         plt.savefig(photo_path, format="png", bbox_inches="tight", dpi=100)
 
     @staticmethod
-    def _get_object(module, s: str, parameter: dict):
+    def _get_object(module, s: str, parameter: dict) -> Any:
         return getattr(module, s)(**parameter)
 
     def _get_logger(self) -> None:
@@ -337,12 +343,15 @@ class _TrainerBase(ABC):
             torch.save(state, path)
 
     def _adapt_epoch_to_step(self) -> None:
-        params, train_steps = self.info["lr_scheduler"]["args"], len(self.dataloader_train)
-        if params.get("epoch_size"):  # get epoch_size rather than step_size
-            params["step_size"] = int(params["epoch_size"] * train_steps)
-            params.pop("epoch_size")
+        if self.train_steps is None:
+            self.train_steps = len(self.dataloader_train)
+        for lr_scheduler in filter(lambda x: "lr_scheduler" in x, self.info):
+            params = self.info[lr_scheduler]["args"]
+            if params.get("epoch_size"):  # get epoch_size rather than step_size
+                params["step_size"] = int(params["epoch_size"] * self.train_steps)
+                params.pop("epoch_size")
 
-    def progress(self, dataloader, epoch, test=False, total=None) -> Iterator:
+    def progress(self, dataloader: DataLoader|zip, epoch: int, test: bool=False, total: int|None=None) -> Iterator:
         _progress = rich.progress.Progress(
             rich.progress.TextColumn("[progress.percentage]{task.description}"),
             rich.progress.SpinnerColumn("dots" if test else "moon", "progress.percentage", finished_text="[green]✔"),
@@ -356,12 +365,13 @@ class _TrainerBase(ABC):
             rich.progress.TimeElapsedColumn(),
             transient=True,
         )
+        
         if total is None:
             try:
-                total = len(dataloader)
+                total = len(dataloader) # type: ignore
             except TypeError:
                 __key_1st_testloader = sorted(self.dataloader_test_dict.keys())[0]
-                total = len(self.dataloader_test_dict[__key_1st_testloader]) if test else len(self.dataloader_train)
+                total = len(self.dataloader_test_dict[__key_1st_testloader]) if test else self.train_steps
 
         with _progress:
             description = "Testing" if test else f"Epoch {epoch}/{self.max_epoch}"
@@ -369,8 +379,8 @@ class _TrainerBase(ABC):
             _progress.update(rich.progress.TaskID(0), description=f"[green]Epoch {epoch:<2d}")
 
 
-# a decorator to plot confusion matrix easily
-def plot_confusion(name="test", interval=1) -> Callable[..., Callable[..., dict[str, metrics]]]:
+# A decorator to plot confusion matrix easily
+def plot_confusion(name: str = "test", interval: int = 1) -> Callable[..., Callable[..., dict[str, metrics]]]:
     def decorator(func_to_plot_confusion: Callable[..., dict[str, metrics]]):
         # wrapper to the actual function, e.g. self.test_epoch(self, epoch, *args, **kwargs)
         def wrapper(self: _TrainerBase, epoch, *args, **kwargs):

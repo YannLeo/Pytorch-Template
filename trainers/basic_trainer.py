@@ -4,6 +4,7 @@
 # @File       : basic_trainer.py
 # @Note       : A basic trainer for training a feed forward neural network
 
+from typing import Any
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -12,7 +13,7 @@ from ._trainer_base import _TrainerBase, plot_confusion, metrics
 
 
 class BasicTrainer(_TrainerBase):
-    def __init__(self, info: dict, path=Path(), device=torch.device("cuda")) -> None:
+    def __init__(self, info: dict[str, Any], path=Path(), device=torch.device("cuda")) -> None:
         """(1)Dataloaders, (2)models, (3)optimizers along with schedulers and (4)loggers are prepared in super().__init__() in sequence."""
         super().__init__(info, path, device)
         self.loss_func = nn.CrossEntropyLoss(label_smoothing=info["label_smoothing"])
@@ -43,7 +44,7 @@ class BasicTrainer(_TrainerBase):
             loss.backward()
             self.opt.step()
             # 4. Updating learning rate by step; move it to self.train() if you want to update lr by epoch
-            self.metrics_writer.add_scalar("lr", self.opt.param_groups[0]["lr"], global_step=epoch * len(self.dataloader_train) + batch)
+            self.metrics_writer.add_scalar("lr", self.opt.param_groups[0]["lr"], global_step=epoch * self.train_steps + batch)
             self.lr_scheduler.step()
             # 5. Computing metrics
             num_samples += data.shape[0]
