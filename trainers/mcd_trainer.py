@@ -6,103 +6,90 @@
 #               Unsupervised Domain Adaptation) in PyTorch
 
 
+from typing import Any
 import torch
 from torch import nn
+from torch.utils.data import DataLoader
 import numpy as np
 from pathlib import Path
-from ._trainer_base import _Trainer_Base, plot_confusion
+from ._trainer_base import _TrainerBase, plot_confusion, metrics
 import models
 import datasets
 
 
-class MCDTrainer(_Trainer_Base):
+class MCDTrainer(_TrainerBase):
     """
-    A simple implementation of MCD (https://arxiv.org/abs/1712.02560). The most essential 
+    A simple implementation of MCD (https://arxiv.org/abs/1712.02560). The most essential
     part of the code are the functions train_epoch() and test_epoch().
 
     Ref: https://github.com/mil-tokyo/MCD_DA
     """
 
-    def __init__(self, info: dict, resume=None, path=Path(), device=torch.device('cuda')):
-        # Dataloaders, models, optimizers and loggers are prepared in super().__init__()
-        super().__init__(info, resume, path, device)
-
+    def __init__(self, info: dict[str, Any], path=Path(), device=torch.device("cuda")) -> None:
+        """(1)Dataloaders, (2)models, (3)optimizers along with schedulers and (4)loggers are prepared in super().__init__() in sequence."""
+        super().__init__(info, path, device)
         self.loss_func = nn.CrossEntropyLoss()
-        self.discrepancy_steps = info["discrepancy_steps"]
-        self.discrepancy_weight = info["discrepancy_weight"]
+        self.discrepancy_steps: int = info["discrepancy_steps"]
+        self.discrepancy_weight: float = info["discrepancy_weight"]
 
-    def _prepare_dataloaders(self, info):
+    def _prepare_dataloaders(self) -> None:
         """
         Prepare the dataloaders for the source and target domains.
         """
-        # datasets of source domain
-        self.dataset_source = self._get_object(datasets, info['dataloader_source']['dataset']['name'],
-                                               info['dataloader_source']['dataset']['args'])
-        self.dataset_val = self._get_object(datasets, info['dataloader_val']['dataset']['name'],
-                                            info['dataloader_val']['dataset']['args'])
-        self.dataloader_source = torch.utils.data.DataLoader(dataset=self.dataset_source,
-                                                             **info['dataloader_source']['args'])
-        self.dataloader_val = torch.utils.data.DataLoader(dataset=self.dataset_val,
-                                                          **info['dataloader_val']['args'])
-        # datasets of target domain
-        self.dataset_target = self._get_object(datasets, info['dataloader_target']['dataset']['name'],
-                                               info['dataloader_target']['dataset']['args'])
-        self.dataset_test = self._get_object(datasets, info['dataloader_test']['dataset']['name'],
-                                             info['dataloader_test']['dataset']['args'])
-        self.dataloader_target = torch.utils.data.DataLoader(dataset=self.dataset_target,
-                                                             **info['dataloader_target']['args'])
-        self.dataloader_test = torch.utils.data.DataLoader(dataset=self.dataset_test,
-                                                           **info['dataloader_test']['args'])
-        # helper constants
-        self.batch_size = self.dataloader_source.batch_size
-        self.num_batches_train = min(len(self.dataloader_source), len(self.dataloader_target))
-        self.num_batches_test = len(self.dataloader_test)  # we don't use the validation set (dataset_val)
+        super()._prepare_dataloaders()
+        # 1. datasets of source domain
+        self.dataset_source = self._get_object(
+            datasets, self.info["dataloader_source"]["dataset"]["name"], self.info["dataloader_source"]["dataset"]["args"]
+        )
+        self.dataloader_source = DataLoader(dataset=self.dataset_source, **self.info["dataloader_source"]["args"])
+        self.dataset_val = self._get_object(
+            datasets, self.info["dataloader_val"]["dataset"]["name"], self.info["dataloader_val"]["dataset"]["args"]
+        )
+        self.dataloader_val = DataLoader(dataset=self.dataset_val, **self.info["dataloader_val"]["args"])
+        # 2.1 dataset of target domain
+        self.dataset_target = self._get_object(
+            datasets, self.info["dataloader_target"]["dataset"]["name"], self.info["dataloader_target"]["dataset"]["args"]
+        )
+        self.dataloader_target = DataLoader(dataset=self.dataset_target, **self.info["dataloader_target"]["args"])
+        # 2.2 datasets of test set of target domain (done by super()._prepare_dataloaders())
 
-    def _prepare_models(self, info):
+        # Convert epoch_size to step_size
+        self.train_steps = min(len(self.dataloader_source), len(self.dataloader_target))
+
+    def _prepare_models(self) -> None:
         """
         Prepare the models.
         """
         # the name `self.model` is reserved for some functions in the base class
-        self.model = self._get_object(models, info['model']['name'], info['model']['args'])
-        self._resuming_model(self.model)  # Prepare for resuming models
+        super()._prepare_models()
         self.C1 = models.Classifier(
-            input_dim=info['model']['args']['num_classes'], num_class=self.num_classes,
-            intermediate_dim=128, layers=3)
+            input_dim=self.info["model"]["args"]["num_classes"], num_class=self.num_classes, intermediate_dim=128, layers=3
+        )
         self.C2 = models.Classifier(
-            input_dim=info['model']['args']['num_classes'], num_class=self.num_classes,
-            intermediate_dim=128, layers=2)
-
-        self.model = self.model.to(self.device)
+            input_dim=self.info["model"]["args"]["num_classes"], num_class=self.num_classes, intermediate_dim=128, layers=2
+        )
         self.C1 = self.C1.to(self.device)
         self.C2 = self.C2.to(self.device)
 
-    def _prepare_opt(self, info):
+    def _prepare_opt(self) -> None:
         """
         Prepare the optimizers and corresponding learning rate schedulers.
         """
-        # convert epoch_size to step_size like below:
-        self._adapt_epoch_to_step(info['lr_scheduler']['args'], self.num_batches_train)
-        self._adapt_epoch_to_step(info['lr_scheduler_C']['args'], self.num_batches_train)
+        super()._prepare_opt()
+        self.opt_C1 = torch.optim.Adam(params=self.C1.parameters(), lr=self.info["lr_scheduler_C"]["init_lr"])
+        self.opt_C2 = torch.optim.Adam(params=self.C2.parameters(), lr=self.info["lr_scheduler_C"]["init_lr"])
+        self.lr_scheduler_C1: torch.optim.lr_scheduler.LRScheduler = self._get_object(
+            torch.optim.lr_scheduler, self.info["lr_scheduler_C"]["name"], {"optimizer": self.opt_C1, **self.info["lr_scheduler_C"]["args"]}
+        )
+        self.lr_scheduler_C2: torch.optim.lr_scheduler.LRScheduler = self._get_object(
+            torch.optim.lr_scheduler, self.info["lr_scheduler_C"]["name"], {"optimizer": self.opt_C2, **self.info["lr_scheduler_C"]["args"]}
+        )
 
-        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
-        self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
-                                             {'optimizer': self.opt, **info['lr_scheduler']['args']})
-        self.opt = torch.optim.AdamW(params=self.model.parameters(), lr=info['lr_scheduler']['init_lr'])
-        self.opt_C1 = torch.optim.Adam(params=self.C1.parameters(), lr=info['lr_scheduler_C']['init_lr'])
-        self.opt_C2 = torch.optim.Adam(params=self.C2.parameters(), lr=info['lr_scheduler_C']['init_lr'])
-
-        self.lr_scheduler = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler']['name'],
-                                             {'optimizer': self.opt, **info['lr_scheduler']['args']})
-        self.lr_scheduler_C1 = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler_C']['name'],
-                                                {'optimizer': self.opt_C1, **info['lr_scheduler_C']['args']})
-        self.lr_scheduler_C2 = self._get_object(torch.optim.lr_scheduler, info['lr_scheduler_C']['name'],
-                                                {'optimizer': self.opt_C2, **info['lr_scheduler_C']['args']})
-
-    def _reset_grad(self):
+    def reset_grad(self) -> None:
         """
         Reset gradients of all trainable parameters.
         """
-        self.opt.zero_grad(set_to_none=True)
+        super().reset_grad()
         self.opt_C1.zero_grad(set_to_none=True)
         self.opt_C2.zero_grad(set_to_none=True)
 
@@ -120,20 +107,20 @@ class MCDTrainer(_Trainer_Base):
         self.model.train()
         self.C1.train()
         self.C2.train()
-        loop = self.progress(enumerate(zip(self.dataloader_source, self.dataloader_target)), epoch=epoch)
+        loop = enumerate(self.progress(zip(self.dataloader_source, self.dataloader_target), epoch=epoch, total=self.train_steps))
         for batch, ((data_s, label_s), (data_t, label_t)) in loop:  # label_t is merely for metrics
             data_s, data_t = data_s.to(self.device), data_t.to(self.device)
             label_s, label_t = label_s.to(self.device), label_t.to(self.device)
             num_samples += data_s.shape[0]
 
             """step 1. Training on source domain only"""
-            feature_s = self.model(data_s)
-            output_s1 = self.C1(feature_s)
-            output_s2 = self.C2(feature_s)
-            loss_s1 = self.loss_func(output_s1, label_s)
-            loss_s2 = self.loss_func(output_s2, label_s)
+            feature_s: torch.Tensor = self.model(data_s)
+            output_s1: torch.Tensor = self.C1(feature_s)
+            output_s2: torch.Tensor = self.C2(feature_s)
+            loss_s1: torch.Tensor = self.loss_func(output_s1, label_s)
+            loss_s2: torch.Tensor = self.loss_func(output_s2, label_s)
             loss_s = loss_s1 + loss_s2
-            self._reset_grad()
+            self.reset_grad()
             loss_s.backward()
             self.opt.step()
             self.opt_C1.step()
@@ -151,7 +138,7 @@ class MCDTrainer(_Trainer_Base):
             loss_s = loss_s1 + loss_s2
             loss_dis = self.discrepancy(output_t1, output_t2)
             loss = loss_s - loss_dis * self.discrepancy_weight
-            self._reset_grad()
+            self.reset_grad()
             loss.backward()
             self.opt_C1.step()
             self.opt_C2.step()
@@ -167,7 +154,7 @@ class MCDTrainer(_Trainer_Base):
                 output_t1 = self.C1(feature_t)
                 output_t2 = self.C2(feature_t)
                 loss_dis = self.discrepancy(output_t1, output_t2)
-                self._reset_grad()
+                self.reset_grad()
                 loss_dis.backward()
                 self.opt.step()
             # Computing metrics
@@ -175,59 +162,61 @@ class MCDTrainer(_Trainer_Base):
             train_loss_discrepancy += loss_dis.item()
 
             # Updating learning rate by step
+            self.metrics_writer.add_scalar("lr", self.opt.param_groups[0]["lr"], global_step=epoch * self.train_steps + batch)
             self.lr_scheduler.step()
             self.lr_scheduler_C1.step()
             self.lr_scheduler_C2.step()
 
         return {
-            "train_loss_C1": train_loss_C1 / self.num_batches_train,
-            "train_loss_C2": train_loss_C2 / self.num_batches_train,
-            "train_loss_dis": train_loss_discrepancy / self.num_batches_train,
-            "acc_C1_s": num_correct_C1_src / num_samples,
-            "acc_C2_s": num_correct_C2_src / num_samples,
-            "acc_tgt": (num_correct_tgt / num_samples, 'green')
+            "train_loss_C1": metrics(train_loss_C1 / self.train_steps),
+            "train_loss_C2": metrics(train_loss_C2 / self.train_steps),
+            "train_loss_dis": metrics(train_loss_discrepancy / self.train_steps),
+            "acc_C1_s": metrics(num_correct_C1_src / num_samples),
+            "acc_C2_s": metrics(num_correct_C2_src / num_samples),
+            "acc_tgt": metrics(num_correct_tgt / num_samples, "green"),
         }
 
-    @plot_confusion(name="test", interval=2)  # "test.png"
-    def test_epoch(self, epoch):
-        """Only relates to the test set of target domain."""
+    @torch.inference_mode()  # disable autograd
+    def test_epoch(self, epoch: int, dataloader_test: DataLoader) -> dict[str, metrics]:
+        """
+        The main testing process, which will be called in self.train()
+        self._y_true & self._y_pred is for plotting confusion matrix
+        """
         # Helper variables
         num_correct, num_correct_C1, num_correct_C2, num_samples = 0, 0, 0, 0
-        test_loss = 0.
+        test_loss = 0.0
+        data: torch.Tensor
+        targets: torch.Tensor
 
         self.model.eval()
         self.C1.eval()
         self.C2.eval()
-        with torch.no_grad():
-            for data, targets in self.progress(self.dataloader_test, epoch=epoch, test=True):
-                if self.plot_confusion_flag:
-                    self._y_true.append(targets.numpy())
+        for data, targets in self.progress(dataloader_test, epoch=epoch, test=True):
+            self._y_true.append(targets.numpy())
 
-                data, targets = data.to(self.device), targets.to(self.device)
+            data, targets = data.to(self.device), targets.to(self.device)
 
-                # Forwarding
-                feature = self.model(data)
-                output1 = self.C1(feature)
-                output2 = self.C2(feature)
-                # Computing metrics
-                num_samples += data.shape[0]
-                test_loss += (self.loss_func(output1, targets) +
-                              self.loss_func(output2, targets)).item() / 2
-                predicts = torch.argmax(output1+output2, dim=1)  # ensemble
-                num_correct += torch.sum(predicts == targets).item()
-                num_correct_C1 += torch.sum(torch.argmax(output1, dim=1) == targets).item()
-                num_correct_C2 += torch.sum(torch.argmax(output2, dim=1) == targets).item()
+            # Forwarding
+            feature: torch.Tensor = self.model(data)
+            output1: torch.Tensor = self.C1(feature)
+            output2: torch.Tensor = self.C2(feature)
+            # Computing metrics
+            num_samples += data.shape[0]
+            test_loss += (self.loss_func(output1, targets) + self.loss_func(output2, targets)).item() / 2
+            predicts = torch.argmax(output1 + output2, dim=1)  # ensemble
+            num_correct += torch.sum(predicts == targets).item()
+            num_correct_C1 += torch.sum(torch.argmax(output1, dim=1) == targets).item()
+            num_correct_C2 += torch.sum(torch.argmax(output2, dim=1) == targets).item()
 
-                if self.plot_confusion_flag:
-                    self._y_pred.append(predicts.cpu().numpy())
+            self._y_pred.append(predicts.cpu().numpy())
 
         return {
-            "test_loss": test_loss / self.num_batches_test,
-            "test_acc": (num_correct / num_samples, 'blue'),
-            "test_acc_C1": num_correct_C1 / num_samples,
-            "test_acc_C2": num_correct_C2 / num_samples,
+            "test_loss": metrics(test_loss / len(dataloader_test)),
+            "test_acc": metrics(num_correct / num_samples, "blue"),
+            "test_acc_C1": metrics(num_correct_C1 / num_samples),
+            "test_acc_C2": metrics(num_correct_C2 / num_samples),
         }
 
     @staticmethod
-    def discrepancy(out1, out2):
+    def discrepancy(out1: torch.Tensor, out2: torch.Tensor) -> torch.Tensor:
         return torch.mean(torch.abs(torch.softmax(out1, dim=1) - torch.softmax(out2, dim=1)))
