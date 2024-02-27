@@ -58,7 +58,6 @@ class BasicTrainer(_TrainerBase):
         return {
             "train_loss": metrics(train_loss / len(self.dataloader_train)),
             "train_acc": metrics(num_correct / num_samples, "blue"),
-            "hello": metrics([1, 2.22222], "green"),
         }
 
     @torch.inference_mode()  # disable autograd
