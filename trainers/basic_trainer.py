@@ -5,10 +5,12 @@
 # @Note       : A basic trainer for training a feed forward neural network
 
 from typing import Any
+
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from pathlib import Path
+
 from ._trainer_base import _TrainerBase, plot_confusion, metrics
 
 
