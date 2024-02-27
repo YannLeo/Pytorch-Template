@@ -36,8 +36,11 @@ with open(config, "r", encoding="utf8") as f:
 
 """3. Start training ..."""
 path = make_dir(info, config, resume)
+clean_at_exit.cleaner(path, lambda: locals()["trainer"]._train_end() if locals().get("trainer") else None)  # register clean_at_exit
+
 print(f"--- Using configuration file: {config} ---")
 print(f"--- Using device(s): {os.environ.get('CUDA_VISIBLE_DEVICES', 'default')} ---")
+
 
 # load trainer from toml file
 import trainers  # filter unnecessary warnings
