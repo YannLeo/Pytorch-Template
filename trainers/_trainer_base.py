@@ -4,7 +4,7 @@
 # @File       : _trainer_base.py
 # @Note       : The base class of all trainers, and some tools for training
 
-from typing import NamedTuple, Iterator, Callable, Any
+from typing import NamedTuple, Iterator, Callable, Sequence, Any
 from abc import ABC, abstractmethod
 import itertools
 import logging
@@ -52,7 +52,7 @@ _color_map = {
 
 
 class metrics(NamedTuple):
-    metric: int | float = 0
+    metric: float | Sequence[float] = 0
     color: str = "k"
 
 
@@ -176,7 +176,7 @@ class _TrainerBase(ABC):
 
             """1. Training epoch"""
             metrics_train = self.train_epoch(epoch) if self.train_steps else {}
-            _str = f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}"
+            _str = f"Epoch: {epoch:<4d}| {self._metrics_wrapper(metrics_train, with_color=True)}"
             print(_str + ("Testing..." if test_loaders else ""), end="\n" if test_loaders else "")
 
             """2. Testing epoch(s)"""
@@ -185,10 +185,11 @@ class _TrainerBase(ABC):
             for idx, test_loader in enumerate(test_loaders):
                 # Why type(self)? Because `func_to_plot_confusion` in `plot_confusion` will add `self` as the first argument
                 # when use `plot_confusion(self.test_epoch)`. But using `@plot_confusion()` before `self.test_epoch(self)` will not.
-                test_epoch = plot_confusion(name=test_loader.split("_")[-1], interval=5)(type(self).test_epoch)
+                name_test_loader = test_loader.split("_")[-1]
+                test_epoch = plot_confusion(name=name_test_loader, interval=5)(type(self).test_epoch)
                 metrics_test = test_epoch(self, epoch, self.dataloader_test_dict[test_loader])
                 list_metrics_test.append(metrics_test)
-                _str += f"{self.metrics_wrapper(metrics_test, with_color=True)}"
+                _str += f"{self._metrics_wrapper(metrics_test, with_color=True)}"
                 print(
                     self.LINE_UP + _str + ("Testing..." if idx != len(test_loaders) - 1 else ""),
                     end="\n" if idx != len(test_loaders) - 1 else "",
@@ -196,7 +197,7 @@ class _TrainerBase(ABC):
 
                 """3. Logging results"""
                 # need to be specified by yourself
-                self.metrics_writer.add_scalar(f"test_acc{idx}", metrics_test["test_acc"].metric, global_step=epoch)
+                self.metrics_writer.add_scalar(f"test_acc_{name_test_loader}", metrics_test["test_acc"].metric, global_step=epoch)
 
             # The end of each epoch
             print(f"time:{int(time.time() - time_flag):3d}s", end="")
@@ -212,13 +213,13 @@ class _TrainerBase(ABC):
         # Need to be specified by yourself:
         # which dataloader_test (first, i.e., 0 by default) to use and which metric (tset_loss by default) to use.
         if list_metrics_test:
-            best = self._save_model_by_test_loss(epoch, list_metrics_test[0]["test_loss"].metric)
+            best = self._save_model_by_test_loss(epoch, list_metrics_test[0]["test_loss"].metric)  # type: ignore
         else:
-            best = self._save_model_by_test_loss(epoch, metrics_train["train_loss"].metric)
+            best = self._save_model_by_test_loss(epoch, metrics_train["train_loss"].metric)  # type: ignore
         # Logging to log.txt
         self.logger.info(
-            f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train)}"
-            + "".join([f"{self.metrics_wrapper(metrics)}" for metrics in list_metrics_test])
+            f"Epoch: {epoch:<4d}| {self._metrics_wrapper(metrics_train)}"
+            + "".join([f"{self._metrics_wrapper(metrics)}" for metrics in list_metrics_test])
             + f'{"saving best model..." if best else ""}',
         )
 
@@ -230,11 +231,10 @@ class _TrainerBase(ABC):
     def train_epoch(self, epoch: int) -> dict[str, metrics]:
         pass
 
-    def test_epoch(self, epoch: int, dataloader_test: DataLoader) -> dict[str, metrics]:
-        ...
+    def test_epoch(self, epoch: int, dataloader_test: DataLoader) -> dict[str, metrics]: ...
 
     @staticmethod
-    def metrics_wrapper(metrics: dict[str, metrics], with_color: bool = False) -> str:
+    def _metrics_wrapper(metrics: dict[str, metrics], with_color: bool = False) -> str:
         """
         It takes a dictionary of metrics and returns a string of the metrics in a nice format
 
@@ -245,14 +245,21 @@ class _TrainerBase(ABC):
         Returns:
           A string of the metrics
         """
-        return (
-            "".join(
-                f"{_color_map[metric.color][0]}{key}: {metric.metric:.4f}{_color_map[metric.color][1]} | "
-                for key, metric in metrics.items()
+        fmt_metrics = ""
+
+        for key, metric in metrics.items():
+            fmt_left = f"{_color_map[metric.color][0]}" if with_color else ""
+            fmt_right = f"{_color_map[metric.color][1]}" if with_color else ""
+            metric_ = metric.metric
+            fmt_metrics += (
+                fmt_left
+                + f"{key}: "
+                + ("[" + ",".join([f"{m:.2f}" for m in metric_]) + "]" if isinstance(metric_, Sequence) else f"{metric_:.4f}")
+                + fmt_right
+                + " | "
             )
-            if with_color
-            else "".join(f"{key}: {metric.metric:.4f} | " for key, metric in metrics.items())
-        )
+
+        return fmt_metrics
 
     @staticmethod
     def _plot_confusion_matrix_impl(

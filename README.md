@@ -61,7 +61,7 @@ Hi~ 这是一个 `Pytorch` 的训练模板, 总体使用原则是: 根据指定�
   
   接下来就需要完成真正的核心部分: 训练逻辑 `train_epoch()` 与测试逻辑 `test_epoch()`. 它们迭代完整个 epoch 后应该返回由指标 (metrics) 构成的字典, 此处亦可在 value 处返回一个 `(值, 颜色字符串)` 元组, 使得在 console 中把这个指标变彩色. 具体颜色的定义在 `_Trainer_Base` 的开头. 
   
-  如果需要画混淆矩阵, 可以用 `plot_confusion` 包装某一个 step 比如 `test_epoch()`, 其内还需要把真实标签与预测结果保存到公共变量 `self._y_true, self._y_pred` 中, 用以画混淆矩阵图 (还需要在 `toml` 中设置 `plot_confusion` 为 `true`, 以便不修改代码却能直接禁止画图). 装饰器 `plot_confusion` 会自动解析这两个公共变量去画混淆矩阵. 
+  如果需要画混淆矩阵, 可以用 `plot_confusion` 包装某一个 step 比如 `test_epoch()`, 其内还需要把真实标签与预测结果保存到公共变量 `self._y_true, self._y_pred` 中(此部分不写相当于不画), 用以画混淆矩阵图. 装饰器 `plot_confusion` 会自动解析这两个公共变量去画混淆矩阵. 
 
   修改写入日志的行为或按 epoch 修改学习率则需要覆盖父类的 `train()` 方法.
 
@@ -120,7 +120,7 @@ python main.py -c configs/mnist.toml
 
 - 文件下不动可以使用 [fastgithub](https://github.com/dotnetcore/fastgithub)
 
-- 默认会读取 `toml` 中字段**等于** `dataloader_train` 的数据集和**包含** `dataloader_test` 的多个数据集, 分别作为变量 `self.dataloader_train` 和 `self.dataloader_test_dict'; 默认会读取其中字段**等于** `model` 的部分作为模型; 同样地, `lr_scheduler` 字段也是默认被读取. 可以覆盖基类以自定义这些行为
+- 默认会读取 `toml` 中字段**等于** `dataloader_train` 的数据集和**包含** `dataloader_test` 的多个数据集(之后都以字典序被处理), 分别作为变量 `self.dataloader_train` 和 `self.dataloader_test_dict'; 默认会读取其中字段**等于** `model` 的部分作为模型; 同样地, `lr_scheduler` 字段也是默认被读取. 可以覆盖基类以自定义这些行为
 
 - 模型恢复可以写在 `toml` 的 `resume` 字段下, 如果命令行也传入会覆盖 `toml` 中的设置, 并且在相应的 `log` 文件夹中的 `toml` 的首行添加对应信息
 

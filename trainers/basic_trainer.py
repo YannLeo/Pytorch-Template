@@ -53,10 +53,10 @@ class BasicTrainer(_TrainerBase):
             num_correct += torch.sum(predicts == targets).item()
 
             self._y_pred.append(predicts.cpu().numpy())  # for plotting confusion matrix
-
         return {
             "train_loss": metrics(train_loss / len(self.dataloader_train)),
             "train_acc": metrics(num_correct / num_samples, "blue"),
+            "hello": metrics([1, 2.22222], "green"),
         }
 
     @torch.inference_mode()  # disable autograd
