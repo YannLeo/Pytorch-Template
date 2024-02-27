@@ -93,8 +93,8 @@ class _TrainerBase(ABC):
         self._y_pred: list = []
 
         # 1. Dataloaders
-        self._prepare_dataloaders()                    
-        self._adapt_epoch_to_step()  # adapt epoch_size to step_size               
+        self._prepare_dataloaders()
+        self._adapt_epoch_to_step()  # adapt epoch_size to step_size
         # 2. Defination and initialization of the models
         self._prepare_models()
         # 3. Optimizers and schedulers of the models
@@ -113,12 +113,13 @@ class _TrainerBase(ABC):
             # Load training dataloader
             self.dataset_train = self._get_object(datasets, train_loader_config["dataset"]["name"], train_loader_config["dataset"]["args"])
             self.dataloader_train = DataLoader(dataset=self.dataset_train, **train_loader_config["args"])
-            self.train_steps = len(self.dataloader_train) 
+            self.train_steps = len(self.dataloader_train)
         except KeyError:
+            self.train_steps = 0
             print("Skipping loading training dataloader because of lacking key in toml: `dataloader_train`.")
 
         # Load testing dataloaders as a dict, sorted by name
-        test_loaders = list(filter(lambda x: "dataloader_test" in x, self.info))  # multiple dataloaders for testing
+        test_loaders = sorted(list(filter(lambda x: "dataloader_test" in x, self.info)))  # multiple dataloaders for testing
         dataset_test_dict = {
             test_loader_name: self._get_object(
                 datasets, self.info[test_loader_name]["dataset"]["name"], self.info[test_loader_name]["dataset"]["args"]
@@ -157,6 +158,7 @@ class _TrainerBase(ABC):
         """Note: only for variable `self.model`"""
         self.epoch = 1
         if self.resume:
+            print(f"--- Resuming model from {self.resume} ---")
             checkpoint = torch.load(self.resume)
             state_dict = checkpoint["state_dict"]
             model.load_state_dict(state_dict)
@@ -173,7 +175,7 @@ class _TrainerBase(ABC):
             time_flag = time.time()
 
             """1. Training epoch"""
-            metrics_train = self.train_epoch(epoch)
+            metrics_train = self.train_epoch(epoch) if self.train_steps else {}
             _str = f"Epoch: {epoch:<4d}| {self.metrics_wrapper(metrics_train, with_color=True)}"
             print(_str + ("Testing..." if test_loaders else ""), end="\n" if test_loaders else "")
 
@@ -228,9 +230,8 @@ class _TrainerBase(ABC):
     def train_epoch(self, epoch: int) -> dict[str, metrics]:
         pass
 
-    @abstractmethod
     def test_epoch(self, epoch: int, dataloader_test: DataLoader) -> dict[str, metrics]:
-        pass
+        ...
 
     @staticmethod
     def metrics_wrapper(metrics: dict[str, metrics], with_color: bool = False) -> str:
@@ -351,7 +352,7 @@ class _TrainerBase(ABC):
                 params["step_size"] = int(params["epoch_size"] * self.train_steps)
                 params.pop("epoch_size")
 
-    def progress(self, dataloader: DataLoader|zip, epoch: int, test: bool=False, total: int|None=None) -> Iterator:
+    def progress(self, dataloader: DataLoader | zip, epoch: int, test: bool = False, total: int | None = None) -> Iterator:
         _progress = rich.progress.Progress(
             rich.progress.TextColumn("[progress.percentage]{task.description}"),
             rich.progress.SpinnerColumn("dots" if test else "moon", "progress.percentage", finished_text="[green]✔"),
@@ -365,10 +366,10 @@ class _TrainerBase(ABC):
             rich.progress.TimeElapsedColumn(),
             transient=True,
         )
-        
+
         if total is None:
             try:
-                total = len(dataloader) # type: ignore
+                total = len(dataloader)  # type: ignore
             except TypeError:
                 __key_1st_testloader = sorted(self.dataloader_test_dict.keys())[0]
                 total = len(self.dataloader_test_dict[__key_1st_testloader]) if test else self.train_steps
