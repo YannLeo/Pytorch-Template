@@ -36,14 +36,20 @@ with open(config, "r", encoding="utf8") as f:
 
 """3. Start training ..."""
 path = make_dir(info, config, resume)
-clean_at_exit.cleaner(path, lambda: locals()["trainer"]._train_end() if locals().get("trainer") else None)  # register clean_at_exit
+# register do_clean when `Ctrl+C` is pressed; maybe there is no object named `trainer` when `Ctrl+C` is pressed
+train_end = lambda: locals()["trainer"]._train_end() if locals().get("trainer") else None
+clean_at_exit.clean_after_killed(path, train_end)
 
 print(f"--- Using configuration file: {config} ---")
 print(f"--- Using device(s): {os.environ.get('CUDA_VISIBLE_DEVICES', 'default')} ---")
 
-
 # load trainer from toml file
-import trainers  # filter unnecessary warnings
+import trainers  # move here to filter unnecessary warnings
 
-trainer: trainers.TrainerBase = getattr(trainers, info["trainer"])(info, path)
-trainer.train()
+try:
+    trainer: trainers.TrainerBase = getattr(trainers, info["trainer"])(info, path)
+    trainer.train()
+except Exception as e:
+    import traceback
+    print(f"Error occurred and here is the traceback ↓↓↓\n======\n{traceback.format_exc()}======")
+    clean_at_exit.do_clean(path, train_end)
